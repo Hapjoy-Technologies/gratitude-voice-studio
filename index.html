@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#fff7f8">
+  <meta name="description" content="Internal affirmation voice studio for the Gratitude team.">
+  <title>Gratitude Voice Studio</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <section class="login-screen" id="login-screen">
+    <form class="login-card" id="login-form">
+      <div class="logo large" aria-hidden="true">♥</div>
+      <div>
+        <h1>Gratitude Voice Studio</h1>
+        <p>Enter the shared team access code to continue.</p>
+      </div>
+      <label class="input-label" for="access-code">Access code</label>
+      <input id="access-code" type="password" autocomplete="current-password" required placeholder="Enter access code">
+      <p class="form-error" id="login-error" role="alert"></p>
+      <button class="primary-button" id="login-button" type="submit">Sign in</button>
+      <small>The code stays in this browser tab and is never stored in this public repository.</small>
+    </form>
+  </section>
+
+  <div class="app-shell" id="app-shell" hidden>
+    <header class="app-bar">
+      <a class="brand" href="#library" data-view-link="library">
+        <span class="logo" aria-hidden="true">♥</span>
+        <span>Gratitude Voice Studio</span>
+      </a>
+      <nav aria-label="Main navigation">
+        <button class="nav-button active" data-view="library" type="button">Library</button>
+        <button class="nav-button" data-view="generate" type="button">Generate</button>
+      </nav>
+      <button class="icon-button" id="sign-out" type="button" aria-label="Sign out" title="Sign out">↪</button>
+    </header>
+
+    <main class="page-wrap">
+      <section class="view" id="library-view">
+        <div class="page-heading">
+          <div>
+            <h2>Affirmation library</h2>
+            <p>Create folders and keep generated affirmations organised.</p>
+          </div>
+          <button class="primary-button compact" id="new-affirmation" type="button">＋ New affirmation</button>
+        </div>
+
+        <div class="notice">
+          <strong>Frontend preview</strong>
+          <span>Folders are saved only in this browser until AWS Lambda and S3 are connected.</span>
+        </div>
+
+        <div class="library-layout">
+          <aside class="folder-panel">
+            <div class="panel-heading">
+              <span>Folders</span>
+              <button class="mini-button" id="new-folder" type="button">＋ New</button>
+            </div>
+            <div class="folder-list" id="folder-list"></div>
+          </aside>
+
+          <section class="content-panel">
+            <div class="content-heading">
+              <div>
+                <h3 id="folder-title">Select a folder</h3>
+                <span id="folder-summary">0 affirmations</span>
+              </div>
+              <button class="text-danger" id="delete-folder" type="button" hidden>Delete folder</button>
+            </div>
+            <div class="affirmation-list" id="affirmation-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="generate-view" hidden>
+        <div class="page-heading">
+          <div>
+            <h2>New affirmation</h2>
+            <p>Choose a folder and voice, then generate the recording on Modal.</p>
+          </div>
+          <button class="secondary-button compact" data-view="library" type="button">← Back to library</button>
+        </div>
+
+        <form class="composer-card" id="generate-form">
+          <div class="field-row">
+            <label class="field">
+              <span class="input-label">Save to folder</span>
+              <select id="folder-select" required></select>
+            </label>
+            <div class="field manage-voice-wrap">
+              <span class="input-label">Voice library</span>
+              <button class="secondary-button" id="open-voice-manager" type="button">＋ Add voice</button>
+            </div>
+          </div>
+
+          <fieldset class="voice-section">
+            <legend>Choose a prebuilt voice</legend>
+            <div class="voice-grid" id="voice-grid"><div class="empty-state small">Loading voices…</div></div>
+          </fieldset>
+
+          <button class="text-button" id="toggle-custom" type="button">Or upload a custom voice sample</button>
+          <div class="custom-upload" id="custom-upload" hidden>
+            <label class="dropzone" for="custom-audio">
+              <strong>Choose a voice sample</strong>
+              <span>Clear audio, 3–30 seconds, maximum 12 MB</span>
+              <span id="custom-filename"></span>
+            </label>
+            <input id="custom-audio" type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac" hidden>
+            <label class="checkbox-row">
+              <input id="custom-consent" type="checkbox">
+              <span>I have permission to use this voice.</span>
+            </label>
+          </div>
+
+          <label class="field text-field">
+            <span class="input-label">Text to speak</span>
+            <span class="text-wrap">
+              <textarea id="affirmation-text" maxlength="500" required placeholder="I am becoming more confident every day."></textarea>
+              <small><span id="text-count">0</span>/500</small>
+            </span>
+          </label>
+
+          <details class="settings-panel">
+            <summary>Voice settings <span id="settings-summary">Speed 0.78 · 64 steps</span></summary>
+            <div class="settings-grid">
+              <label class="range-field">Speed <output id="speed-output">0.78</output><input id="speed" type="range" min="0.5" max="1.5" step="0.01" value="0.78"></label>
+              <label class="range-field">Inference steps <output id="steps-output">64</output><input id="steps" type="range" min="4" max="64" step="4" value="64"></label>
+              <label class="range-field">Guidance scale <output id="guidance-output">2.0</output><input id="guidance" type="range" min="0" max="4" step="0.1" value="2"></label>
+              <label class="range-field">Word gap <output id="gap-output">0 ms</output><input id="word-gap" type="range" min="0" max="1000" step="50" value="0"></label>
+            </div>
+            <div class="toggle-grid">
+              <label><input id="clear-pronunciation" type="checkbox" checked> Clear pronunciation</label>
+              <label><input id="denoise" type="checkbox" checked> Denoise</label>
+              <label><input id="preprocess" type="checkbox" checked> Preprocess sample</label>
+              <label><input id="postprocess" type="checkbox" checked> Remove long silences</label>
+            </div>
+          </details>
+
+          <button class="primary-button generate-button" id="generate-button" type="submit">Generate voice</button>
+          <div class="status" id="status" role="status" aria-live="polite"></div>
+
+          <section class="result-card" id="result-card" hidden>
+            <div>
+              <span class="success-pill">Generated</span>
+              <h3>Your affirmation is ready</h3>
+              <p>Listen first. AWS saving will be connected after the team provides access.</p>
+            </div>
+            <audio id="result-player" controls></audio>
+            <div class="result-actions">
+              <a class="secondary-button" id="download-result" download="affirmation.wav">Download WAV</a>
+              <button class="primary-button" id="confirm-save" type="button" disabled title="AWS Lambda and S3 are not connected yet">Confirm & save to AWS</button>
+            </div>
+          </section>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="folder-dialog">
+    <form class="dialog-card" id="folder-form">
+      <div class="dialog-heading"><h3>Create folder</h3><button class="icon-button" data-close-dialog type="button">×</button></div>
+      <label class="field"><span class="input-label">Folder name</span><input id="folder-name" maxlength="60" required placeholder="Example: Morning confidence"></label>
+      <div class="dialog-actions"><button class="secondary-button" data-close-dialog type="button">Cancel</button><button class="primary-button" type="submit">Create folder</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="voice-dialog">
+    <form class="dialog-card" id="voice-form">
+      <div class="dialog-heading"><h3>Add a prebuilt voice</h3><button class="icon-button" data-close-dialog type="button">×</button></div>
+      <div class="field-row">
+        <label class="field"><span class="input-label">Voice name</span><input name="name" maxlength="40" required placeholder="Example: Maya"></label>
+        <label class="field"><span class="input-label">Style</span><input name="style" maxlength="60" required placeholder="Calm and warm"></label>
+      </div>
+      <label class="field"><span class="input-label">Voice sample</span><input name="reference_audio" type="file" required accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac"></label>
+      <input name="reference_text" type="hidden" value="">
+      <label class="checkbox-row"><input id="voice-consent" type="checkbox" required><span>I have permission to add and use this voice.</span></label>
+      <p class="form-error" id="voice-error" role="alert"></p>
+      <div class="dialog-actions"><button class="secondary-button" data-close-dialog type="button">Cancel</button><button class="primary-button" id="add-voice-button" type="submit">Add to library</button></div>
+    </form>
+  </dialog>
+
+  <script src="./app.js"></script>
+</body>
+</html>
