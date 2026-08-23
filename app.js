@@ -15,9 +15,15 @@ let voices = [];
 let selectedVoiceId = null;
 let customMode = false;
 let activeAudio = null;
+let activePreviewButton = null;
+let activePreviewUrl = null;
+let previewRequestId = 0;
 let resultUrl = null;
 let pendingGeneration = null;
 let localAffirmations = [];
+let generationProgressTimer = null;
+let generationProgressHideTimer = null;
+let generationProgressValue = 0;
 
 function loadLocalFolders() {
   try {
@@ -232,28 +238,108 @@ async function loadVoices(preferredId = selectedVoiceId) {
 }
 
 function renderVoices() {
+  if (activePreviewButton) stopActivePreview();
   const grid = $("#voice-grid");
   if (!voices.length) {
     grid.innerHTML = '<div class="empty-state small">No voices available.</div>';
     return;
   }
-  grid.innerHTML = voices.map((voice) => `<div class="voice-card${voice.id === selectedVoiceId && !customMode ? " selected" : ""}" data-voice="${voice.id}" role="radio" aria-checked="${voice.id === selectedVoiceId && !customMode}"><span class="voice-avatar">${escapeHtml(initials(voice.name))}</span><span class="voice-copy"><strong>${escapeHtml(voice.name)}</strong><small>${escapeHtml(voice.style)}</small></span><span class="voice-actions"><button data-preview="${voice.id}" type="button" aria-label="Preview ${escapeHtml(voice.name)}">▶</button><button class="delete-voice" data-delete-voice="${voice.id}" type="button" aria-label="Delete ${escapeHtml(voice.name)}">×</button></span></div>`).join("");
+  grid.innerHTML = voices.map((voice) => `<div class="voice-card${voice.id === selectedVoiceId && !customMode ? " selected" : ""}" data-voice="${voice.id}" role="radio" aria-checked="${voice.id === selectedVoiceId && !customMode}"><span class="voice-avatar">${escapeHtml(initials(voice.name))}</span><span class="voice-copy"><strong>${escapeHtml(voice.name)}</strong><small>${escapeHtml(voice.style)}</small></span><span class="voice-actions"><button data-preview="${voice.id}" data-default-label="Preview ${escapeHtml(voice.name)}" type="button" aria-label="Preview ${escapeHtml(voice.name)}" aria-pressed="false">▶</button><button class="delete-voice" data-delete-voice="${voice.id}" type="button" aria-label="Delete ${escapeHtml(voice.name)}">×</button></span></div>`).join("");
+}
+
+function stopActivePreview() {
+  previewRequestId += 1;
+  if (activeAudio) {
+    activeAudio.onended = null;
+    activeAudio.onerror = null;
+    activeAudio.pause();
+    activeAudio.currentTime = 0;
+  }
+  if (activePreviewButton) {
+    activePreviewButton.disabled = false;
+    activePreviewButton.textContent = "▶";
+    activePreviewButton.setAttribute("aria-pressed", "false");
+    activePreviewButton.setAttribute("aria-label", activePreviewButton.dataset.defaultLabel || "Preview voice");
+  }
+  if (activePreviewUrl) URL.revokeObjectURL(activePreviewUrl);
+  activeAudio = null;
+  activePreviewButton = null;
+  activePreviewUrl = null;
 }
 
 async function previewVoice(voiceId, button) {
+  if (activePreviewButton === button) {
+    stopActivePreview();
+    return;
+  }
+
+  stopActivePreview();
+  const requestId = previewRequestId;
+  activePreviewButton = button;
+  button.textContent = "…";
+  button.setAttribute("aria-label", "Loading voice sample");
   try {
-    if (activeAudio) { activeAudio.pause(); activeAudio = null; }
-    button.textContent = "…";
     const blob = await (await modalApi(`/voices/${encodeURIComponent(voiceId)}/preview`)).blob();
     const url = URL.createObjectURL(blob);
+    if (requestId !== previewRequestId || activePreviewButton !== button) {
+      URL.revokeObjectURL(url);
+      return;
+    }
+    activePreviewUrl = url;
     activeAudio = new Audio(url);
-    button.textContent = "Ⅱ";
-    activeAudio.onended = () => { button.textContent = "▶"; URL.revokeObjectURL(url); };
+    button.textContent = "■";
+    button.setAttribute("aria-pressed", "true");
+    button.setAttribute("aria-label", "Stop voice sample");
+    activeAudio.onended = stopActivePreview;
+    activeAudio.onerror = stopActivePreview;
     await activeAudio.play();
   } catch (error) {
-    button.textContent = "▶";
-    showStatus(error.message, true);
+    if (requestId === previewRequestId) {
+      stopActivePreview();
+      showStatus(error.message, true);
+    }
   }
+}
+
+function setGenerationProgress(value, label) {
+  generationProgressValue = Math.max(0, Math.min(100, Math.round(value)));
+  $("#generation-progress").setAttribute("aria-valuenow", String(generationProgressValue));
+  $("#progress-fill").style.width = `${generationProgressValue}%`;
+  $("#progress-percent").textContent = `${generationProgressValue}%`;
+  $("#progress-label").textContent = label;
+}
+
+function startGenerationProgress() {
+  clearInterval(generationProgressTimer);
+  clearTimeout(generationProgressHideTimer);
+  $("#generation-progress").hidden = false;
+  setGenerationProgress(4, "Waking the model");
+  generationProgressTimer = setInterval(() => {
+    const increment = generationProgressValue < 28 ? 4 : generationProgressValue < 66 ? 2 : 1;
+    const nextValue = Math.min(92, generationProgressValue + increment);
+    const label = nextValue < 28
+      ? "Waking the model"
+      : nextValue < 58
+        ? "Preparing the selected voice"
+        : nextValue < 84
+          ? "Generating your affirmation"
+          : "Finishing the audio";
+    setGenerationProgress(nextValue, label);
+  }, 750);
+}
+
+function finishGenerationProgress(success) {
+  clearInterval(generationProgressTimer);
+  generationProgressTimer = null;
+  if (!success) {
+    $("#generation-progress").hidden = true;
+    setGenerationProgress(0, "Preparing your voice");
+    return;
+  }
+  setGenerationProgress(100, "Audio ready");
+  generationProgressHideTimer = setTimeout(() => {
+    $("#generation-progress").hidden = true;
+  }, 900);
 }
 
 function updateSettings() {
@@ -303,6 +389,8 @@ async function generate(event) {
   data.set("audio_chunk_threshold", "30");
 
   const button = $("#generate-button");
+  stopActivePreview();
+  startGenerationProgress();
   button.disabled = true;
   button.textContent = "Generating on Modal…";
   $("#result-card").hidden = true;
@@ -339,9 +427,11 @@ async function generate(event) {
       affirmations = localAffirmations.filter((item) => item.folderId === folderId);
       renderFolders();
     }
+    finishGenerationProgress(true);
     $("#status").className = "status";
   } catch (error) {
     pendingGeneration = null;
+    finishGenerationProgress(false);
     showStatus(error.message || "Generation failed.", true);
   } finally {
     button.disabled = false;

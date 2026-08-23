@@ -169,6 +169,11 @@
             </details>
 
             <button class="primary-button generate-button" id="generate-button" type="submit">Generate voice <span aria-hidden="true">→</span></button>
+            <div class="generation-progress" id="generation-progress" role="progressbar" aria-label="Estimated generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
+              <div class="progress-copy"><span id="progress-label">Preparing your voice</span><strong id="progress-percent">0%</strong></div>
+              <div class="progress-track" aria-hidden="true"><span id="progress-fill"></span></div>
+              <small>Estimated progress</small>
+            </div>
             <div class="status" id="status" role="status" aria-live="polite"></div>
 
             <section class="result-card" id="result-card" hidden>
