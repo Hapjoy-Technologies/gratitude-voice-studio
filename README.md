@@ -6,23 +6,20 @@ Internal frontend for generating affirmation audio with the OmniVoice model host
 
 - GitHub Pages frontend
 - Shared access-code login
-- Browser-local folder drafts
+- Browser-local folder drafts while AWS access is pending
 - Prebuilt and custom voice selection
 - Modal audio generation
-- Audio preview and WAV download
+- MP3 generation, preview, and download
+- Responsive internal-tool interface inspired by Gratitude's calm visual language
 
-AWS Lambda and S3 persistence are intentionally not implemented yet. Generated audio is not shared or permanently stored by this frontend.
+Generated audio currently stays in the browser and is not uploaded to AWS.
+The prepared AWS integration remains disabled until a dedicated Lambda role is
+created with access limited to `affn-audios/dev/*`.
 
 ## Architecture
 
 ```text
 GitHub Pages -> Modal OmniVoice API -> Browser preview/download
-```
-
-Future confirmed flow:
-
-```text
-Browser confirmation -> AWS Lambda -> S3
 ```
 
 No AWS keys, Modal tokens, passwords, or other secrets belong in this public repository.
