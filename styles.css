@@ -98,12 +98,18 @@ nav { display: flex; align-items: center; gap: 3px; padding: 4px; border: 1px so
 .folder-copy strong { font-size: 12px; }
 .folder-copy small { margin-top: 3px; color: var(--muted); font-size: 9px; font-weight: 500; }
 .content-panel { min-width: 0; padding: 26px; }
-.content-heading { min-height: 48px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+.content-heading { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
 .content-heading h3 { margin: 0; font-family: var(--serif); font-size: 27px; font-weight: 500; letter-spacing: -.025em; }
 .content-heading span { color: var(--muted); font-size: 10px; }
+.folder-actions { display: flex; align-items: center; gap: 8px; }
+.folder-actions .compact { min-height: 38px; padding-inline: 14px; font-size: 10px; }
+.folder-actions .secondary-button span { color: inherit; font-size: 9px; }
+.library-status { min-height: 0; color: var(--muted); font-size: 10px; }
+.library-status:not(:empty) { padding-top: 12px; }
 .affirmation-list { display: grid; gap: 10px; padding-top: 18px; }
 .affirmation-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; padding: 17px 18px; border: 1px solid var(--line); border-radius: 17px; background: var(--surface); box-shadow: var(--shadow-sm); transition: border-color .16s ease, transform .16s ease, box-shadow .16s ease; }
 .affirmation-card:hover { border-color: #c8bec8; transform: translateY(-1px); box-shadow: 0 12px 30px -24px rgba(45, 39, 48, .48); }
+.affirmation-card.playing { border-color: rgba(104, 76, 114, .34); background: var(--surface-tint); box-shadow: 0 12px 30px -24px rgba(104, 76, 114, .5); }
 .affirmation-card p { margin: 0; font-family: var(--serif); font-size: 19px; font-weight: 500; line-height: 1.35; }
 .affirmation-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; color: var(--muted); font-size: 9px; }
 .affirmation-meta span:not(:last-child)::after { content: "·"; margin-left: 12px; color: #b1a8b2; }
@@ -205,6 +211,7 @@ dialog::backdrop { background: rgba(45, 39, 48, .22); backdrop-filter: blur(6px)
   .library-layout { grid-template-columns: 1fr; min-height: 560px; }
   .folder-panel { border-right: 0; border-bottom: 1px solid var(--line); }
   .folder-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .content-heading { align-items: flex-start; }
   .composer-card { grid-template-columns: 1fr; }
   .composer-sidebar { border-top: 1px solid var(--line); border-left: 0; }
   .voice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -222,6 +229,9 @@ dialog::backdrop { background: rgba(45, 39, 48, .22); backdrop-filter: blur(6px)
   .storage-mode { display: none; }
   .folder-list, .voice-grid, .field-row, .settings-grid, .toggle-grid { grid-template-columns: 1fr; }
   .composer-main, .composer-sidebar, .content-panel { padding: 18px; }
+  .content-heading { flex-direction: column; }
+  .folder-actions { width: 100%; }
+  .folder-actions > * { flex: 1; }
   .affirmation-card { grid-template-columns: 1fr; }
   .affirmation-meta span::after { display: none; }
   .result-actions, .dialog-actions { align-items: stretch; flex-direction: column; }

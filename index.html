@@ -90,7 +90,12 @@
                 <h3 id="folder-title">Select a folder</h3>
                 <span id="folder-summary">0 affirmations</span>
               </div>
+              <div class="folder-actions">
+                <button class="secondary-button compact" id="play-all" type="button" disabled><span aria-hidden="true">▶</span> Play all</button>
+                <button class="primary-button compact" id="add-to-folder" type="button" disabled>Add affirmation <span aria-hidden="true">＋</span></button>
+              </div>
             </div>
+            <div class="library-status" id="library-status" role="status" aria-live="polite"></div>
             <div class="affirmation-list" id="affirmation-list"></div>
           </section>
         </div>

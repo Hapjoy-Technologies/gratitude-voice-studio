@@ -24,6 +24,10 @@ let localAffirmations = [];
 let generationProgressTimer = null;
 let generationProgressHideTimer = null;
 let generationProgressValue = 0;
+let libraryAudio = null;
+let activeAffirmationId = null;
+let isPlayingAll = false;
+let playlistIndex = 0;
 
 function loadLocalFolders() {
   try {
@@ -92,6 +96,7 @@ async function showApp() {
 }
 
 function showView(name) {
+  if (name !== "library") stopLibraryPlayback();
   $("#library-view").hidden = name !== "library";
   $("#generate-view").hidden = name !== "generate";
   $$(".nav-button").forEach((button) => button.classList.toggle("active", button.dataset.view === name));
@@ -164,6 +169,75 @@ function showLibraryError(message) {
   $("#affirmation-list").innerHTML = `<div class="empty-state">${escapeHtml(message)}</div>`;
 }
 
+function releaseLibraryAudio() {
+  if (!libraryAudio) return;
+  libraryAudio.onended = null;
+  libraryAudio.onerror = null;
+  libraryAudio.pause();
+  libraryAudio.currentTime = 0;
+  libraryAudio = null;
+}
+
+function stopLibraryPlayback(render = true) {
+  releaseLibraryAudio();
+  activeAffirmationId = null;
+  isPlayingAll = false;
+  playlistIndex = 0;
+  $("#library-status").textContent = "";
+  if (render) renderAffirmations();
+}
+
+async function playLibraryItem(item) {
+  releaseLibraryAudio();
+  activeAffirmationId = item.identifier;
+  libraryAudio = new Audio(item.audioUrl);
+  libraryAudio.onended = () => {
+    if (isPlayingAll && playlistIndex + 1 < affirmations.length) {
+      playlistIndex += 1;
+      playLibraryItem(affirmations[playlistIndex]);
+      return;
+    }
+    stopLibraryPlayback();
+  };
+  libraryAudio.onerror = () => {
+    stopLibraryPlayback();
+    $("#library-status").textContent = "This recording could not be played. Refresh the folder and try again.";
+  };
+  $("#library-status").textContent = isPlayingAll
+    ? `Playing ${playlistIndex + 1} of ${affirmations.length}`
+    : `Playing ${item.voiceName}`;
+  try {
+    await libraryAudio.play();
+    renderAffirmations();
+  } catch (_) {
+    stopLibraryPlayback();
+    $("#library-status").textContent = "Playback was blocked. Click play and try again.";
+  }
+}
+
+function toggleAffirmationPlayback(identifier) {
+  if (activeAffirmationId === identifier && libraryAudio && !libraryAudio.paused) {
+    stopLibraryPlayback();
+    return;
+  }
+  const item = affirmations.find((affirmation) => affirmation.identifier === identifier);
+  if (!item?.audioUrl) return;
+  stopLibraryPlayback(false);
+  playLibraryItem(item);
+}
+
+function togglePlayAll() {
+  if (isPlayingAll) {
+    stopLibraryPlayback();
+    return;
+  }
+  if (!affirmations.length) return;
+  stopLibraryPlayback(false);
+  isPlayingAll = true;
+  playlistIndex = 0;
+  playLibraryItem(affirmations[0]);
+}
+
 function renderFolders() {
   if (selectedFolderId && !folders.some((folder) => folder.id === selectedFolderId)) selectedFolderId = folders[0]?.id || null;
   const list = $("#folder-list");
@@ -195,6 +269,11 @@ function renderAffirmations(loading = false, error = "") {
   const folder = folders.find((item) => item.id === selectedFolderId);
   $("#folder-title").textContent = folder?.name || "Select a folder";
   $("#folder-summary").textContent = `${affirmations.length} affirmation${affirmations.length === 1 ? "" : "s"}`;
+  $("#add-to-folder").disabled = !folder;
+  $("#play-all").disabled = !folder || !affirmations.length;
+  $("#play-all").innerHTML = isPlayingAll
+    ? '<span aria-hidden="true">■</span> Stop all'
+    : '<span aria-hidden="true">▶</span> Play all';
   const list = $("#affirmation-list");
   if (error) return showLibraryError(error);
   if (loading) {
@@ -204,7 +283,10 @@ function renderAffirmations(loading = false, error = "") {
   } else if (!affirmations.length) {
     list.innerHTML = '<div class="empty-state">No saved affirmations in this folder yet.<br>Click “New affirmation” to create one.</div>';
   } else {
-    list.innerHTML = affirmations.map((item) => `<article class="affirmation-card"><div><p>${escapeHtml(item.title)}</p><div class="affirmation-meta"><span>${escapeHtml(item.voiceName)}</span><span>${new Date(item.createdAt).toLocaleString()}</span><span>${item.local ? "Browser preview" : "Saved in AWS"}</span></div></div><div class="card-actions"><button data-play-url="${escapeHtml(item.audioUrl)}" type="button" title="Play">▶</button><a href="${escapeHtml(item.audioUrl)}" download="affirmation-${item.identifier}.mp3" title="Download">↓</a></div></article>`).join("");
+    list.innerHTML = affirmations.map((item) => {
+      const playing = activeAffirmationId === item.identifier && libraryAudio && !libraryAudio.paused;
+      return `<article class="affirmation-card${playing ? " playing" : ""}"><div><p>${escapeHtml(item.title)}</p><div class="affirmation-meta"><span>${escapeHtml(item.voiceName)}</span><span>${new Date(item.createdAt).toLocaleString()}</span><span>${item.local ? "Browser preview" : "Saved in AWS"}</span></div></div><div class="card-actions"><button data-play-id="${escapeHtml(item.identifier)}" type="button" aria-label="${playing ? "Stop" : "Play"} ${escapeHtml(item.title)}" title="${playing ? "Stop" : "Play"}">${playing ? "■" : "▶"}</button><a href="${escapeHtml(item.audioUrl)}" download="affirmation-${item.identifier}.mp3" title="Download">↓</a></div></article>`;
+    }).join("");
   }
 }
 
@@ -487,12 +569,14 @@ async function confirmSave() {
 $("#login-form").addEventListener("submit", verifyLogin);
 $("#sign-out").addEventListener("click", () => { sessionStorage.removeItem("gratitude-voice-access"); location.reload(); });
 $$('[data-view], [data-view-link]').forEach((element) => element.addEventListener("click", (event) => { event.preventDefault(); showView(element.dataset.view || element.dataset.viewLink); }));
-$("#folder-list").addEventListener("click", async (event) => { const button = event.target.closest("[data-folder]"); if (!button) return; selectedFolderId = button.dataset.folder; rememberFolder(); renderFolders(); await refreshAffirmations(); });
+$("#folder-list").addEventListener("click", async (event) => { const button = event.target.closest("[data-folder]"); if (!button) return; stopLibraryPlayback(false); selectedFolderId = button.dataset.folder; rememberFolder(); renderFolders(); await refreshAffirmations(); });
 $("#new-folder").addEventListener("click", () => $("#folder-dialog").showModal());
 $("#folder-form").addEventListener("submit", async (event) => { event.preventDefault(); const button = event.submitter; button.disabled = true; $("#folder-error").textContent = ""; try { await createFolder($("#folder-name").value); event.target.reset(); $("#folder-dialog").close(); } catch (error) { $("#folder-error").textContent = error.message; } finally { button.disabled = false; } });
 $("#new-affirmation").addEventListener("click", () => { if (!folders.length) return $("#folder-dialog").showModal(); showView("generate"); });
+$("#add-to-folder").addEventListener("click", () => { if (!selectedFolderId) return; showView("generate"); });
+$("#play-all").addEventListener("click", togglePlayAll);
 $("#folder-select").addEventListener("change", (event) => { selectedFolderId = event.target.value; rememberFolder(); });
-$("#affirmation-list").addEventListener("click", (event) => { const play = event.target.closest("[data-play-url]"); if (play) new Audio(play.dataset.playUrl).play(); });
+$("#affirmation-list").addEventListener("click", (event) => { const play = event.target.closest("[data-play-id]"); if (play) toggleAffirmationPlayback(play.dataset.playId); });
 $("#voice-grid").addEventListener("click", async (event) => { const preview = event.target.closest("[data-preview]"); const remove = event.target.closest("[data-delete-voice]"); if (preview) { event.stopPropagation(); return previewVoice(preview.dataset.preview, preview); } if (remove) { event.stopPropagation(); const voice = voices.find((item) => item.id === remove.dataset.deleteVoice); if (!voice || !confirm(`Delete voice “${voice.name}”? This cannot be undone.`)) return; try { await modalApi(`/api/voices/${encodeURIComponent(voice.id)}`, {method: "DELETE"}); await loadVoices(); } catch (error) { showStatus(error.message, true); } return; } const card = event.target.closest("[data-voice]"); if (card) { customMode = false; $("#custom-upload").hidden = true; selectedVoiceId = card.dataset.voice; renderVoices(); } });
 $("#toggle-custom").addEventListener("click", () => { customMode = !customMode; $("#custom-upload").hidden = !customMode; $("#toggle-custom").textContent = customMode ? "Use a prebuilt voice instead" : "Or upload a custom voice sample"; renderVoices(); });
 $("#custom-audio").addEventListener("change", (event) => { $("#custom-filename").textContent = event.target.files[0]?.name || ""; });
