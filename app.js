@@ -28,6 +28,9 @@ let libraryAudio = null;
 let activeAffirmationId = null;
 let isPlayingAll = false;
 let playlistIndex = 0;
+let draggedAffirmationId = null;
+let orderChanged = false;
+let orderSaving = false;
 
 function loadLocalFolders() {
   try {
@@ -238,6 +241,71 @@ function togglePlayAll() {
   playLibraryItem(affirmations[0]);
 }
 
+function markOrderChanged() {
+  orderChanged = true;
+  $("#library-status").textContent = "Order changed. Save it when you are ready.";
+  renderAffirmations();
+}
+
+function moveAffirmation(identifier, direction) {
+  if (orderSaving) return;
+  const fromIndex = affirmations.findIndex((item) => item.identifier === identifier);
+  const toIndex = fromIndex + direction;
+  if (fromIndex < 0 || toIndex < 0 || toIndex >= affirmations.length) return;
+  stopLibraryPlayback(false);
+  [affirmations[fromIndex], affirmations[toIndex]] = [affirmations[toIndex], affirmations[fromIndex]];
+  markOrderChanged();
+}
+
+function moveAffirmationByDrop(sourceId, targetId, placeAfter) {
+  if (orderSaving || sourceId === targetId) return;
+  const sourceIndex = affirmations.findIndex((item) => item.identifier === sourceId);
+  const targetIndex = affirmations.findIndex((item) => item.identifier === targetId);
+  if (sourceIndex < 0 || targetIndex < 0) return;
+  stopLibraryPlayback(false);
+  const [moved] = affirmations.splice(sourceIndex, 1);
+  let insertionIndex = affirmations.findIndex((item) => item.identifier === targetId);
+  if (placeAfter) insertionIndex += 1;
+  affirmations.splice(insertionIndex, 0, moved);
+  markOrderChanged();
+}
+
+async function saveAffirmationOrder() {
+  if (!orderChanged || orderSaving || !selectedFolderId) return;
+  orderSaving = true;
+  renderAffirmations();
+  $("#library-status").textContent = "Saving order to AWS…";
+  const identifiers = affirmations.map((item) => item.identifier);
+  try {
+    if (AWS_CONFIGURED) {
+      await awsApi(`/folders/${encodeURIComponent(selectedFolderId)}/order`, {
+        method: "PUT",
+        body: JSON.stringify({identifiers}),
+      });
+    } else {
+      const rank = new Map(identifiers.map((identifier, index) => [identifier, index]));
+      localAffirmations.sort((left, right) => {
+        if (left.folderId !== selectedFolderId || right.folderId !== selectedFolderId) return 0;
+        return rank.get(left.identifier) - rank.get(right.identifier);
+      });
+    }
+    orderChanged = false;
+    $("#library-status").textContent = AWS_CONFIGURED ? "Order saved in AWS." : "Order saved for this session.";
+  } catch (error) {
+    $("#library-status").textContent = error.message || "Could not save the order.";
+    await refreshAffirmations();
+  } finally {
+    orderSaving = false;
+    renderAffirmations();
+  }
+}
+
+function clearDropIndicators() {
+  $$(".affirmation-card.drop-before, .affirmation-card.drop-after").forEach((card) => {
+    card.classList.remove("drop-before", "drop-after");
+  });
+}
+
 function renderFolders() {
   if (selectedFolderId && !folders.some((folder) => folder.id === selectedFolderId)) selectedFolderId = folders[0]?.id || null;
   const list = $("#folder-list");
@@ -274,6 +342,9 @@ function renderAffirmations(loading = false, error = "") {
   $("#play-all").innerHTML = isPlayingAll
     ? '<span aria-hidden="true">■</span> Stop all'
     : '<span aria-hidden="true">▶</span> Play all';
+  $("#save-order").hidden = !orderChanged;
+  $("#save-order").disabled = orderSaving;
+  $("#save-order").textContent = orderSaving ? "Saving…" : "Save changes to AWS";
   const list = $("#affirmation-list");
   if (error) return showLibraryError(error);
   if (loading) {
@@ -283,9 +354,9 @@ function renderAffirmations(loading = false, error = "") {
   } else if (!affirmations.length) {
     list.innerHTML = '<div class="empty-state">No saved affirmations in this folder yet.<br>Click “New affirmation” to create one.</div>';
   } else {
-    list.innerHTML = affirmations.map((item) => {
+    list.innerHTML = affirmations.map((item, index) => {
       const playing = activeAffirmationId === item.identifier && libraryAudio && !libraryAudio.paused;
-      return `<article class="affirmation-card${playing ? " playing" : ""}"><div><p>${escapeHtml(item.title)}</p><div class="affirmation-meta"><span>${escapeHtml(item.voiceName)}</span><span>${new Date(item.createdAt).toLocaleString()}</span><span>${item.local ? "Browser preview" : "Saved in AWS"}</span></div></div><div class="card-actions"><button data-play-id="${escapeHtml(item.identifier)}" type="button" aria-label="${playing ? "Stop" : "Play"} ${escapeHtml(item.title)}" title="${playing ? "Stop" : "Play"}">${playing ? "■" : "▶"}</button><a href="${escapeHtml(item.audioUrl)}" download="affirmation-${item.identifier}.mp3" title="Download">↓</a></div></article>`;
+      return `<article class="affirmation-card${playing ? " playing" : ""}" data-affirmation-id="${escapeHtml(item.identifier)}"><span class="drag-handle" data-drag-id="${escapeHtml(item.identifier)}" draggable="true" aria-hidden="true" title="Drag to reorder">⋮⋮</span><div><p>${escapeHtml(item.title)}</p><div class="affirmation-meta"><span>${escapeHtml(item.voiceName)}</span><span>${new Date(item.createdAt).toLocaleString()}</span><span>${item.local ? "Browser preview" : "Saved in AWS"}</span></div></div><div class="card-actions"><button data-move-id="${escapeHtml(item.identifier)}" data-direction="-1" type="button" aria-label="Move affirmation up" title="Move up"${index === 0 ? " disabled" : ""}>↑</button><button data-move-id="${escapeHtml(item.identifier)}" data-direction="1" type="button" aria-label="Move affirmation down" title="Move down"${index === affirmations.length - 1 ? " disabled" : ""}>↓</button><button data-play-id="${escapeHtml(item.identifier)}" type="button" aria-label="${playing ? "Stop" : "Play"} ${escapeHtml(item.title)}" title="${playing ? "Stop" : "Play"}">${playing ? "■" : "▶"}</button><a href="${escapeHtml(item.audioUrl)}" download="affirmation-${item.identifier}.mp3" title="Download">⇩</a></div></article>`;
     }).join("");
   }
 }
@@ -569,14 +640,19 @@ async function confirmSave() {
 $("#login-form").addEventListener("submit", verifyLogin);
 $("#sign-out").addEventListener("click", () => { sessionStorage.removeItem("gratitude-voice-access"); location.reload(); });
 $$('[data-view], [data-view-link]').forEach((element) => element.addEventListener("click", (event) => { event.preventDefault(); showView(element.dataset.view || element.dataset.viewLink); }));
-$("#folder-list").addEventListener("click", async (event) => { const button = event.target.closest("[data-folder]"); if (!button) return; stopLibraryPlayback(false); selectedFolderId = button.dataset.folder; rememberFolder(); renderFolders(); await refreshAffirmations(); });
+$("#folder-list").addEventListener("click", async (event) => { const button = event.target.closest("[data-folder]"); if (!button) return; stopLibraryPlayback(false); orderChanged = false; selectedFolderId = button.dataset.folder; rememberFolder(); renderFolders(); await refreshAffirmations(); });
 $("#new-folder").addEventListener("click", () => $("#folder-dialog").showModal());
 $("#folder-form").addEventListener("submit", async (event) => { event.preventDefault(); const button = event.submitter; button.disabled = true; $("#folder-error").textContent = ""; try { await createFolder($("#folder-name").value); event.target.reset(); $("#folder-dialog").close(); } catch (error) { $("#folder-error").textContent = error.message; } finally { button.disabled = false; } });
 $("#new-affirmation").addEventListener("click", () => { if (!folders.length) return $("#folder-dialog").showModal(); showView("generate"); });
 $("#add-to-folder").addEventListener("click", () => { if (!selectedFolderId) return; showView("generate"); });
 $("#play-all").addEventListener("click", togglePlayAll);
+$("#save-order").addEventListener("click", saveAffirmationOrder);
 $("#folder-select").addEventListener("change", (event) => { selectedFolderId = event.target.value; rememberFolder(); });
-$("#affirmation-list").addEventListener("click", (event) => { const play = event.target.closest("[data-play-id]"); if (play) toggleAffirmationPlayback(play.dataset.playId); });
+$("#affirmation-list").addEventListener("click", (event) => { const play = event.target.closest("[data-play-id]"); const move = event.target.closest("[data-move-id]"); if (play) return toggleAffirmationPlayback(play.dataset.playId); if (move) moveAffirmation(move.dataset.moveId, Number(move.dataset.direction)); });
+$("#affirmation-list").addEventListener("dragstart", (event) => { const handle = event.target.closest("[data-drag-id]"); if (!handle || orderSaving) return event.preventDefault(); draggedAffirmationId = handle.dataset.dragId; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", draggedAffirmationId); handle.closest(".affirmation-card")?.classList.add("dragging"); });
+$("#affirmation-list").addEventListener("dragover", (event) => { const card = event.target.closest("[data-affirmation-id]"); if (!card || !draggedAffirmationId || card.dataset.affirmationId === draggedAffirmationId) return; event.preventDefault(); clearDropIndicators(); const placeAfter = event.clientY > card.getBoundingClientRect().top + card.offsetHeight / 2; card.classList.add(placeAfter ? "drop-after" : "drop-before"); event.dataTransfer.dropEffect = "move"; });
+$("#affirmation-list").addEventListener("drop", (event) => { const card = event.target.closest("[data-affirmation-id]"); if (!card || !draggedAffirmationId) return; event.preventDefault(); const placeAfter = event.clientY > card.getBoundingClientRect().top + card.offsetHeight / 2; moveAffirmationByDrop(draggedAffirmationId, card.dataset.affirmationId, placeAfter); draggedAffirmationId = null; clearDropIndicators(); });
+$("#affirmation-list").addEventListener("dragend", () => { draggedAffirmationId = null; clearDropIndicators(); $$(".affirmation-card.dragging").forEach((card) => card.classList.remove("dragging")); });
 $("#voice-grid").addEventListener("click", async (event) => { const preview = event.target.closest("[data-preview]"); const remove = event.target.closest("[data-delete-voice]"); if (preview) { event.stopPropagation(); return previewVoice(preview.dataset.preview, preview); } if (remove) { event.stopPropagation(); const voice = voices.find((item) => item.id === remove.dataset.deleteVoice); if (!voice || !confirm(`Delete voice “${voice.name}”? This cannot be undone.`)) return; try { await modalApi(`/api/voices/${encodeURIComponent(voice.id)}`, {method: "DELETE"}); await loadVoices(); } catch (error) { showStatus(error.message, true); } return; } const card = event.target.closest("[data-voice]"); if (card) { customMode = false; $("#custom-upload").hidden = true; selectedVoiceId = card.dataset.voice; renderVoices(); } });
 $("#toggle-custom").addEventListener("click", () => { customMode = !customMode; $("#custom-upload").hidden = !customMode; $("#toggle-custom").textContent = customMode ? "Use a prebuilt voice instead" : "Or upload a custom voice sample"; renderVoices(); });
 $("#custom-audio").addEventListener("change", (event) => { $("#custom-filename").textContent = event.target.files[0]?.name || ""; });
