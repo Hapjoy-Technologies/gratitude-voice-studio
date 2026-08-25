@@ -106,6 +106,9 @@ nav { display: flex; align-items: center; gap: 3px; padding: 4px; border: 1px so
 .folder-actions .compact { min-height: 38px; padding-inline: 14px; font-size: 10px; }
 .folder-actions .secondary-button span { color: inherit; font-size: 9px; }
 .folder-voice-picker select { width: auto; min-width: 124px; min-height: 38px; padding: 0 31px 0 12px; border-radius: 999px; color: var(--plum-deep); background-color: rgba(240, 234, 243, .56); font-size: 10px; font-weight: 700; }
+.voice-version-button { color: var(--plum-deep); border-color: rgba(104, 76, 114, .34); background: var(--surface-tint); box-shadow: 0 7px 16px -14px rgba(81, 57, 91, .65); }
+.voice-version-button:hover:not(:disabled) { color: #fff; border-color: var(--plum); background: var(--plum); }
+.voice-version-button .button-icon { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; color: inherit; background: rgba(104, 76, 114, .1); font-size: 12px !important; }
 .library-status { min-height: 0; color: var(--muted); font-size: 10px; }
 .library-status:not(:empty) { padding-top: 12px; }
 .affirmation-list { display: grid; gap: 10px; padding-top: 18px; }
@@ -201,7 +204,7 @@ audio { width: 100%; height: 36px; }
 .result-actions > * { min-height: 38px; flex: 1; padding-inline: 12px; font-size: 10px; }
 
 dialog { width: min(560px, calc(100% - 28px)); padding: 0; border: 1px solid var(--line); border-radius: 24px; color: var(--ink); background: var(--surface); box-shadow: 0 34px 90px -34px rgba(45, 39, 48, .55); }
-.wide-dialog { width: min(760px, calc(100% - 28px)); }
+.wide-dialog { width: min(700px, calc(100% - 28px)); }
 dialog::backdrop { background: rgba(45, 39, 48, .22); backdrop-filter: blur(6px); }
 .dialog-card { display: grid; gap: 18px; padding: 27px; }
 .dialog-heading > div { display: grid; gap: 5px; }
@@ -209,14 +212,31 @@ dialog::backdrop { background: rgba(45, 39, 48, .22); backdrop-filter: blur(6px)
 .dialog-copy { margin: -4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .form-error { min-height: 16px; margin: -5px 0 0; color: var(--danger); font-size: 10px; line-height: 1.45; }
-.voice-version-note { display: grid; gap: 3px; padding: 13px 14px; border: 1px solid rgba(104, 76, 114, .15); border-radius: 13px; color: var(--muted); background: rgba(240, 234, 243, .45); font-size: 10px; line-height: 1.5; }
-.voice-version-note strong { color: var(--plum-deep); font-size: 11px; }
+.folder-voice-step { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; gap: 10px; }
+.folder-voice-step > span { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--plum); font-family: var(--serif); font-size: 13px; }
+.folder-voice-step > div { display: grid; gap: 2px; }
+.folder-voice-step strong { font-family: var(--serif); font-size: 16px; font-weight: 500; }
+.folder-voice-step small { color: var(--muted); font-size: 9px; }
+.voice-select-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; }
+.voice-preview-button { min-width: 132px; padding-inline: 15px; }
+.selected-voice-summary { min-height: 62px; display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 11px; margin-top: -8px; padding: 10px 12px; border: 1px solid rgba(104, 76, 114, .18); border-radius: 15px; background: linear-gradient(135deg, rgba(240, 234, 243, .7), rgba(255, 253, 250, .82)); }
+.selected-voice-summary > span:nth-child(2) { min-width: 0; display: grid; gap: 2px; }
+.selected-voice-summary strong { font-size: 11px; }
+.selected-voice-summary small { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.recording-count { padding: 6px 9px; border: 1px solid rgba(104, 76, 114, .14); border-radius: 999px; color: var(--plum-deep); background: rgba(255, 253, 250, .78); font-size: 9px; font-weight: 700; white-space: nowrap; }
+.voice-version-note { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: start; gap: 9px; padding: 12px 13px; border: 1px solid rgba(79, 116, 92, .2); border-radius: 13px; color: var(--muted); background: #f1f5f0; font-size: 9px; line-height: 1.5; }
+.voice-version-note > span:last-child { display: grid; gap: 2px; }
+.voice-version-note strong { color: var(--success); font-size: 10px; }
+.note-check { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--success); font-size: 11px; font-weight: 800; }
+.folder-voice-primary { min-width: 220px; justify-content: space-between; }
 .batch-panel { display: grid; gap: 11px; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: rgba(241, 238, 232, .5); }
 .batch-progress-copy { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .batch-progress-copy > div { display: grid; gap: 3px; }
 .batch-progress-copy strong { font-size: 12px; }
 .batch-progress-copy small { color: var(--muted); font-size: 9px; }
 .batch-progress-copy > span { color: var(--plum); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.batch-progress-track { position: relative; }
+.batch-progress-track.active::after { content: ""; width: 34%; position: absolute; inset: 0 auto 0 -34%; border-radius: inherit; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .88), transparent); animation: batch-scan 1.15s ease-in-out infinite; }
 .batch-list { max-height: 310px; display: grid; gap: 6px; overflow-y: auto; padding-right: 3px; }
 .batch-row { min-height: 48px; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .batch-index { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; color: var(--muted); background: var(--surface-soft); font-size: 9px; font-weight: 700; }
@@ -228,6 +248,7 @@ dialog::backdrop { background: rgba(45, 39, 48, .22); backdrop-filter: blur(6px)
 .batch-ready, .batch-saved, .batch-existing { border-color: rgba(79, 116, 92, .2); }
 .batch-generation-error, .batch-save-error { border-color: rgba(166, 70, 70, .22); background: #fbf0ef; }
 .batch-play { width: 30px; min-height: 30px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 50%; color: var(--plum); background: var(--surface-soft); font-size: 9px; }
+@keyframes batch-scan { to { transform: translateX(395%); } }
 
 @media (max-width: 1050px) {
   .composer-card { grid-template-columns: minmax(0, 1fr) 310px; }
@@ -270,6 +291,10 @@ dialog::backdrop { background: rgba(45, 39, 48, .22); backdrop-filter: blur(6px)
   .affirmation-meta span::after { display: none; }
   .result-actions, .dialog-actions { align-items: stretch; flex-direction: column; }
   .dialog-actions > * { width: 100%; }
+  .voice-select-row { grid-template-columns: 1fr; }
+  .voice-preview-button, .folder-voice-primary { width: 100%; }
+  .selected-voice-summary { grid-template-columns: 40px minmax(0, 1fr); }
+  .recording-count { grid-column: 2; justify-self: start; }
 }
 
 @media (prefers-reduced-motion: reduce) {

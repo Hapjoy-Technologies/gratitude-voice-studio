@@ -786,29 +786,51 @@ function folderVoiceStatusLabel(item) {
   return "Waiting";
 }
 
+function updateSelectedFolderVoiceSummary() {
+  const voice = voices.find((item) => item.id === $("#folder-new-voice").value);
+  $("#selected-folder-voice-avatar").textContent = voice ? initials(voice.name) : "—";
+  $("#selected-folder-voice-name").textContent = voice?.name || "Choose a voice";
+  $("#selected-folder-voice-style").textContent = voice?.style || "Select a voice above";
+  $("#folder-recording-count").textContent = `${affirmations.length} recording${affirmations.length === 1 ? "" : "s"}`;
+  const preview = $("#preview-folder-voice");
+  preview.disabled = !voice || folderVoiceBusy;
+  preview.dataset.defaultLabel = voice ? `Preview ${voice.name}` : "Preview voice";
+  preview.setAttribute("aria-label", preview.dataset.defaultLabel);
+}
+
 function renderFolderVoiceBatch() {
   if (!folderVoiceBatch) return;
   const items = folderVoiceBatch.items;
-  const completed = items.filter((item) => !["pending", "generating", "saving"].includes(item.status)).length;
-  const percent = items.length ? Math.round((completed / items.length) * 100) : 0;
+  const phase = folderVoiceBatch.phase || "generating";
   const generating = items.some((item) => item.status === "generating");
   const saving = items.some((item) => item.status === "saving");
+  const activeItem = items.find((item) => item.status === "generating" || item.status === "saving");
+  const activeIndex = activeItem ? items.indexOf(activeItem) + 1 : 0;
   const failures = items.filter((item) => item.status.endsWith("error")).length;
   const ready = items.filter((item) => ["ready", "save-error"].includes(item.status)).length;
+  const completed = phase === "saving"
+    ? items.filter((item) => ["existing", "saved"].includes(item.status)).length
+    : items.filter((item) => ["existing", "ready", "saved", "save-error"].includes(item.status)).length;
+  const percent = items.length ? Math.round((completed / items.length) * 100) : 0;
+  const remaining = Math.max(0, items.length - completed);
 
   $("#folder-voice-progress").hidden = false;
   $("#folder-voice-progress-title").textContent = saving
-    ? `Saving ${folderVoiceBatch.voice.name} to AWS`
+    ? `Saving recording ${activeIndex} of ${items.length} to AWS`
     : generating
-      ? `Generating ${folderVoiceBatch.voice.name}`
+      ? `Generating recording ${activeIndex} of ${items.length}`
       : failures
         ? `${failures} recording${failures === 1 ? " needs" : "s need"} attention`
         : ready
           ? "Ready for your review"
           : "Voice version complete";
-  $("#folder-voice-progress-detail").textContent = `${completed} of ${items.length} affirmations`;
+  $("#folder-voice-progress-detail").textContent = generating || saving
+    ? `${completed} completed · ${remaining} remaining · ${folderVoiceBatch.voice.name}`
+    : `${completed} of ${items.length} recordings completed`;
   $("#folder-voice-progress-percent").textContent = `${percent}%`;
   $("#folder-voice-progress-fill").style.width = `${percent}%`;
+  $("#folder-voice-progress-track").setAttribute("aria-valuenow", String(percent));
+  $("#folder-voice-progress-track").classList.toggle("active", generating || saving);
   $("#folder-voice-list").innerHTML = items.map((item, index) => {
     const canPreview = item.status === "ready" || item.status === "save-error";
     const error = item.error ? `<small>${escapeHtml(item.error)}</small>` : "";
@@ -825,6 +847,7 @@ function renderFolderVoiceBatch() {
   $("#save-folder-voice").textContent = items.some((item) => item.status === "save-error") ? "Retry saving to AWS" : `Save ${ready} recording${ready === 1 ? "" : "s"} to AWS`;
   $("#folder-new-voice").disabled = folderVoiceBusy || Boolean(folderVoiceBatch);
   $("#cancel-folder-voice").disabled = folderVoiceBusy;
+  $("#preview-folder-voice").disabled = folderVoiceBusy || Boolean(folderVoiceBatch);
 }
 
 function openFolderVoiceDialog() {
@@ -844,6 +867,7 @@ function openFolderVoiceDialog() {
   $("#generate-folder-voice").disabled = !candidates.length;
   $("#generate-folder-voice").textContent = `Generate ${affirmations.length} recordings`;
   $("#folder-new-voice").disabled = !candidates.length;
+  updateSelectedFolderVoiceSummary();
   $("#folder-voice-dialog").showModal();
 }
 
@@ -851,6 +875,7 @@ function buildFolderVoiceBatch(voice) {
   return {
     folderId: selectedFolderId,
     voice,
+    phase: "idle",
     items: affirmations.map((affirmation) => {
       const existing = itemVoiceVersions(affirmation).find((item) => item.voiceId === voice.id);
       return {
@@ -875,6 +900,7 @@ async function generateFolderVoiceVersion(event) {
   if (!folderVoiceBatch || folderVoiceBatch.voice.id !== voiceId) folderVoiceBatch = buildFolderVoiceBatch(voice);
 
   folderVoiceBusy = true;
+  folderVoiceBatch.phase = "generating";
   $("#folder-voice-error").textContent = "";
   renderFolderVoiceBatch();
   const targets = folderVoiceBatch.items.filter((item) => ["pending", "generation-error"].includes(item.status));
@@ -894,12 +920,14 @@ async function generateFolderVoiceVersion(event) {
     renderFolderVoiceBatch();
   }
   folderVoiceBusy = false;
+  folderVoiceBatch.phase = folderVoiceBatch.items.some((item) => item.status === "generation-error") ? "blocked" : "review";
   renderFolderVoiceBatch();
 }
 
 async function saveFolderVoiceVersion() {
   if (!folderVoiceBatch || folderVoiceBusy) return;
   folderVoiceBusy = true;
+  folderVoiceBatch.phase = "saving";
   $("#folder-voice-error").textContent = "";
   const targets = folderVoiceBatch.items.filter((item) => ["ready", "save-error"].includes(item.status));
   for (const item of targets) {
@@ -941,6 +969,7 @@ async function saveFolderVoiceVersion() {
   folderVoiceBusy = false;
   const failed = folderVoiceBatch.items.filter((item) => item.status === "save-error").length;
   if (failed) {
+    folderVoiceBatch.phase = "saving";
     $("#folder-voice-error").textContent = `${failed} recording${failed === 1 ? " was" : "s were"} not saved. Your previews are still here; retry when ready.`;
     return renderFolderVoiceBatch();
   }
@@ -997,6 +1026,8 @@ $("#generate-form").addEventListener("submit", generate);
 $("#confirm-save").addEventListener("click", confirmSave);
 $("#folder-voice-form").addEventListener("submit", generateFolderVoiceVersion);
 $("#save-folder-voice").addEventListener("click", saveFolderVoiceVersion);
+$("#folder-new-voice").addEventListener("change", () => { stopActivePreview(); updateSelectedFolderVoiceSummary(); });
+$("#preview-folder-voice").addEventListener("click", (event) => { const voiceId = $("#folder-new-voice").value; if (voiceId) previewVoice(voiceId, event.currentTarget); });
 $("#folder-voice-list").addEventListener("click", (event) => { const button = event.target.closest("[data-batch-play]"); if (button) playBatchPreview(button.dataset.batchPlay); });
 $("#open-voice-manager").addEventListener("click", () => $("#voice-dialog").showModal());
 $("#voice-form").addEventListener("submit", async (event) => { event.preventDefault(); const button = $("#add-voice-button"); $("#voice-error").textContent = ""; button.disabled = true; button.textContent = "Adding…"; try { const data = new FormData(event.target); data.set("consent", String($("#voice-consent").checked)); const voice = (await (await modalApi("/api/voices", {method: "POST", body: data})).json()).voice; event.target.reset(); $("#voice-dialog").close(); await loadVoices(voice.id); } catch (error) { $("#voice-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Add to library"; } });
