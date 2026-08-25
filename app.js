@@ -36,6 +36,9 @@ let selectedFolderVoiceId = null;
 let folderVoiceBatch = null;
 let folderVoiceBusy = false;
 let batchAudio = null;
+let batchAudioUrl = null;
+let activeBatchButton = null;
+let activeBatchStatus = null;
 
 function loadLocalFolders() {
   try {
@@ -511,7 +514,7 @@ function stopActivePreview() {
   }
   if (activePreviewButton) {
     activePreviewButton.disabled = false;
-    activePreviewButton.textContent = "▶";
+    activePreviewButton.textContent = activePreviewButton.dataset.idleText || "▶";
     activePreviewButton.setAttribute("aria-pressed", "false");
     activePreviewButton.setAttribute("aria-label", activePreviewButton.dataset.defaultLabel || "Preview voice");
   }
@@ -530,7 +533,7 @@ async function previewVoice(voiceId, button) {
   stopActivePreview();
   const requestId = previewRequestId;
   activePreviewButton = button;
-  button.textContent = "…";
+  button.textContent = button.classList.contains("voice-preview-button") ? "… Loading sample" : "…";
   button.setAttribute("aria-label", "Loading voice sample");
   try {
     const blob = await (await modalApi(`/voices/${encodeURIComponent(voiceId)}/preview`)).blob();
@@ -541,7 +544,7 @@ async function previewVoice(voiceId, button) {
     }
     activePreviewUrl = url;
     activeAudio = new Audio(url);
-    button.textContent = "■";
+    button.textContent = button.classList.contains("voice-preview-button") ? "■ Stop preview" : "■";
     button.setAttribute("aria-pressed", "true");
     button.setAttribute("aria-label", "Stop voice sample");
     activeAudio.onended = stopActivePreview;
@@ -757,10 +760,27 @@ async function confirmSave() {
 }
 
 function stopBatchAudio() {
-  if (!batchAudio) return;
-  batchAudio.pause();
-  batchAudio.currentTime = 0;
+  if (batchAudio) {
+    batchAudio.onended = null;
+    batchAudio.onerror = null;
+    batchAudio.pause();
+    batchAudio.removeAttribute("src");
+    batchAudio.load();
+  }
+  if (batchAudioUrl) URL.revokeObjectURL(batchAudioUrl);
+  if (activeBatchButton?.isConnected) {
+    activeBatchButton.textContent = "▶";
+    activeBatchButton.classList.remove("playing");
+    activeBatchButton.setAttribute("aria-pressed", "false");
+    activeBatchButton.setAttribute("aria-label", activeBatchButton.dataset.defaultLabel || "Play generated recording");
+  }
+  if (activeBatchStatus?.isConnected) {
+    activeBatchStatus.textContent = activeBatchStatus.dataset.defaultStatus || "Ready to review";
+  }
   batchAudio = null;
+  batchAudioUrl = null;
+  activeBatchButton = null;
+  activeBatchStatus = null;
 }
 
 function clearFolderVoiceBatch() {
@@ -794,6 +814,8 @@ function updateSelectedFolderVoiceSummary() {
   $("#folder-recording-count").textContent = `${affirmations.length} recording${affirmations.length === 1 ? "" : "s"}`;
   const preview = $("#preview-folder-voice");
   preview.disabled = !voice || folderVoiceBusy;
+  preview.dataset.idleText = "▶ Preview voice";
+  if (activePreviewButton !== preview) preview.textContent = preview.dataset.idleText;
   preview.dataset.defaultLabel = voice ? `Preview ${voice.name}` : "Preview voice";
   preview.setAttribute("aria-label", preview.dataset.defaultLabel);
 }
@@ -834,7 +856,8 @@ function renderFolderVoiceBatch() {
   $("#folder-voice-list").innerHTML = items.map((item, index) => {
     const canPreview = item.status === "ready" || item.status === "save-error";
     const error = item.error ? `<small>${escapeHtml(item.error)}</small>` : "";
-    return `<div class="batch-row batch-${escapeHtml(item.status)}"><span class="batch-index">${index + 1}</span><span class="batch-copy"><strong>${escapeHtml(item.title)}</strong><span>${folderVoiceStatusLabel(item)}</span>${error}</span>${canPreview ? `<button class="batch-play" data-batch-play="${escapeHtml(item.affirmationId)}" type="button" aria-label="Preview ${escapeHtml(item.title)}">▶</button>` : ""}</div>`;
+    const status = folderVoiceStatusLabel(item);
+    return `<div class="batch-row batch-${escapeHtml(item.status)}"><span class="batch-index">${index + 1}</span><span class="batch-copy"><strong>${escapeHtml(item.title)}</strong><span class="batch-status" data-default-status="${escapeHtml(status)}">${status}</span>${error}</span>${canPreview ? `<button class="batch-play" data-batch-play="${escapeHtml(item.affirmationId)}" data-default-label="Play ${escapeHtml(item.title)}" type="button" aria-label="Play ${escapeHtml(item.title)}" aria-pressed="false">▶</button>` : ""}</div>`;
   }).join("");
 
   const generateButton = $("#generate-folder-voice");
@@ -987,16 +1010,44 @@ async function saveFolderVoiceVersion() {
   renderAffirmations();
 }
 
-function playBatchPreview(affirmationId) {
+async function playBatchPreview(affirmationId, button) {
   const item = folderVoiceBatch?.items.find((candidate) => candidate.affirmationId === affirmationId);
-  if (!item?.previewUrl) return;
-  stopBatchAudio();
-  batchAudio = new Audio(item.previewUrl);
-  batchAudio.onended = () => { batchAudio = null; };
-  batchAudio.play().catch(() => {
+  if (!item?.blob && !item?.previewUrl) {
+    $("#folder-voice-error").textContent = "This preview is no longer available. Generate the recording again.";
+    return;
+  }
+  if (activeBatchButton === button && batchAudio && !batchAudio.paused) {
     stopBatchAudio();
-    $("#folder-voice-error").textContent = "Preview playback was blocked. Click play and try again.";
-  });
+    return;
+  }
+
+  stopBatchAudio();
+  stopActivePreview();
+  $("#folder-voice-error").textContent = "";
+  batchAudioUrl = item.blob ? URL.createObjectURL(item.blob) : null;
+  batchAudio = new Audio();
+  batchAudio.preload = "auto";
+  batchAudio.src = batchAudioUrl || item.previewUrl;
+  activeBatchButton = button;
+  activeBatchStatus = button.closest(".batch-row")?.querySelector(".batch-status") || null;
+  button.textContent = "■";
+  button.classList.add("playing");
+  button.setAttribute("aria-pressed", "true");
+  button.setAttribute("aria-label", `Stop ${item.title}`);
+  if (activeBatchStatus) activeBatchStatus.textContent = "Playing preview…";
+  batchAudio.onended = stopBatchAudio;
+  batchAudio.onerror = () => {
+    stopBatchAudio();
+    $("#folder-voice-error").textContent = "This generated audio could not be played. Generate it again and retry.";
+  };
+  try {
+    await batchAudio.play();
+  } catch (error) {
+    stopBatchAudio();
+    $("#folder-voice-error").textContent = error?.name === "NotAllowedError"
+      ? "Your browser blocked audio playback. Click the play button again."
+      : "This generated audio could not be played. Generate it again and retry.";
+  }
 }
 
 $("#login-form").addEventListener("submit", verifyLogin);
@@ -1028,7 +1079,7 @@ $("#folder-voice-form").addEventListener("submit", generateFolderVoiceVersion);
 $("#save-folder-voice").addEventListener("click", saveFolderVoiceVersion);
 $("#folder-new-voice").addEventListener("change", () => { stopActivePreview(); updateSelectedFolderVoiceSummary(); });
 $("#preview-folder-voice").addEventListener("click", (event) => { const voiceId = $("#folder-new-voice").value; if (voiceId) previewVoice(voiceId, event.currentTarget); });
-$("#folder-voice-list").addEventListener("click", (event) => { const button = event.target.closest("[data-batch-play]"); if (button) playBatchPreview(button.dataset.batchPlay); });
+$("#folder-voice-list").addEventListener("click", (event) => { const button = event.target.closest("[data-batch-play]"); if (button) playBatchPreview(button.dataset.batchPlay, button); });
 $("#open-voice-manager").addEventListener("click", () => $("#voice-dialog").showModal());
 $("#voice-form").addEventListener("submit", async (event) => { event.preventDefault(); const button = $("#add-voice-button"); $("#voice-error").textContent = ""; button.disabled = true; button.textContent = "Adding…"; try { const data = new FormData(event.target); data.set("consent", String($("#voice-consent").checked)); const voice = (await (await modalApi("/api/voices", {method: "POST", body: data})).json()).voice; event.target.reset(); $("#voice-dialog").close(); await loadVoices(voice.id); } catch (error) { $("#voice-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Add to library"; } });
 $$('[data-close-dialog]').forEach((button) => button.addEventListener("click", () => {

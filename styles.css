@@ -248,7 +248,10 @@ dialog::backdrop { background: rgba(45, 39, 48, .22); backdrop-filter: blur(6px)
 .batch-ready, .batch-saved, .batch-existing { border-color: rgba(79, 116, 92, .2); }
 .batch-generation-error, .batch-save-error { border-color: rgba(166, 70, 70, .22); background: #fbf0ef; }
 .batch-play { width: 30px; min-height: 30px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 50%; color: var(--plum); background: var(--surface-soft); font-size: 9px; }
+.batch-play:hover, .batch-play.playing { color: #fff; border-color: var(--plum); background: var(--plum); box-shadow: 0 6px 16px -9px rgba(81, 57, 91, .8); }
+.batch-play.playing { animation: preview-pulse 1.4s ease-in-out infinite; }
 @keyframes batch-scan { to { transform: translateX(395%); } }
+@keyframes preview-pulse { 50% { box-shadow: 0 0 0 5px rgba(104, 76, 114, .12); } }
 
 @media (max-width: 1050px) {
   .composer-card { grid-template-columns: minmax(0, 1fr) 310px; }
@@ -298,5 +301,5 @@ dialog::backdrop { background: rgba(45, 39, 48, .22); backdrop-filter: blur(6px)
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
