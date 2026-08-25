@@ -3,6 +3,7 @@ const MODAL_BASE_URL = "https://diksangisomu215--omnivoice-web-studio-web-app.mo
 const AWS_API_BASE_URL = "https://a6c42ttu3mqldnamijycyue27m0jgbae.lambda-url.us-east-1.on.aws";
 const AWS_CONFIGURED = !AWS_API_BASE_URL.startsWith("__");
 const LOCAL_FOLDER_STORAGE_KEY = "gratitude-voice-studio-folders-v1";
+const FOLDER_VOICE_STORAGE_KEY = "gratitude-voice-studio-folder-voices-v1";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -31,6 +32,10 @@ let playlistIndex = 0;
 let draggedAffirmationId = null;
 let orderChanged = false;
 let orderSaving = false;
+let selectedFolderVoiceId = null;
+let folderVoiceBatch = null;
+let folderVoiceBusy = false;
+let batchAudio = null;
 
 function loadLocalFolders() {
   try {
@@ -43,6 +48,73 @@ function loadLocalFolders() {
 
 function saveLocalFolders() {
   localStorage.setItem(LOCAL_FOLDER_STORAGE_KEY, JSON.stringify(folders));
+}
+
+function loadFolderVoicePreferences() {
+  try {
+    const value = JSON.parse(localStorage.getItem(FOLDER_VOICE_STORAGE_KEY) || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function rememberFolderVoice(voiceId = selectedFolderVoiceId) {
+  if (!selectedFolderId || !voiceId) return;
+  const preferences = loadFolderVoicePreferences();
+  preferences[selectedFolderId] = voiceId;
+  localStorage.setItem(FOLDER_VOICE_STORAGE_KEY, JSON.stringify(preferences));
+}
+
+function itemVoiceVersions(item) {
+  if (Array.isArray(item?.voices) && item.voices.length) return item.voices;
+  if (!item?.voiceId || !item?.audioUrl) return [];
+  return [{
+    affirmationId: item.identifier,
+    folderId: item.folderId,
+    voiceId: item.voiceId,
+    voiceName: item.voiceName,
+    audioUrl: item.audioUrl,
+    audioKey: item.audioKey,
+    createdAt: item.createdAt,
+    status: item.status || "active",
+    isOriginal: true,
+  }];
+}
+
+function folderVoiceAvailability() {
+  const available = new Map();
+  affirmations.forEach((item) => {
+    const seen = new Set();
+    itemVoiceVersions(item).forEach((voice) => {
+      if (!voice.voiceId || seen.has(voice.voiceId)) return;
+      seen.add(voice.voiceId);
+      const current = available.get(voice.voiceId) || {id: voice.voiceId, name: voice.voiceName || "Voice", count: 0};
+      current.count += 1;
+      available.set(voice.voiceId, current);
+    });
+  });
+  return [...available.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function completeFolderVoices() {
+  return folderVoiceAvailability().filter((voice) => voice.count === affirmations.length);
+}
+
+function ensureSelectedFolderVoice(preferredId = selectedFolderVoiceId) {
+  const complete = completeFolderVoices();
+  const saved = loadFolderVoicePreferences()[selectedFolderId];
+  selectedFolderVoiceId = complete.some((voice) => voice.id === preferredId)
+    ? preferredId
+    : complete.some((voice) => voice.id === saved)
+      ? saved
+      : complete[0]?.id || null;
+  rememberFolderVoice();
+}
+
+function selectedVoiceVersion(item, voiceId = selectedFolderVoiceId) {
+  const versions = itemVoiceVersions(item);
+  return versions.find((voice) => voice.voiceId === voiceId) || versions[0] || null;
 }
 
 function escapeHtml(value) {
@@ -154,6 +226,7 @@ async function refreshFolders(preferredId = selectedFolderId) {
 async function refreshAffirmations() {
   if (!AWS_CONFIGURED) {
     affirmations = localAffirmations.filter((item) => item.folderId === selectedFolderId);
+    ensureSelectedFolderVoice();
     return renderFolders();
   }
   affirmations = [];
@@ -162,6 +235,7 @@ async function refreshAffirmations() {
   try {
     const payload = await awsApi(`/folders/${encodeURIComponent(selectedFolderId)}/affirmations`, {cache: "no-store"});
     affirmations = payload.affirmations || [];
+    ensureSelectedFolderVoice();
     renderFolders();
   } catch (error) {
     renderAffirmations(false, error.message);
@@ -191,9 +265,11 @@ function stopLibraryPlayback(render = true) {
 }
 
 async function playLibraryItem(item) {
+  const voice = selectedVoiceVersion(item);
+  if (!voice?.audioUrl) return;
   releaseLibraryAudio();
   activeAffirmationId = item.identifier;
-  libraryAudio = new Audio(item.audioUrl);
+  libraryAudio = new Audio(voice.audioUrl);
   libraryAudio.onended = () => {
     if (isPlayingAll && playlistIndex + 1 < affirmations.length) {
       playlistIndex += 1;
@@ -208,7 +284,7 @@ async function playLibraryItem(item) {
   };
   $("#library-status").textContent = isPlayingAll
     ? `Playing ${playlistIndex + 1} of ${affirmations.length}`
-    : `Playing ${item.voiceName}`;
+    : `Playing ${voice.voiceName}`;
   try {
     await libraryAudio.play();
     renderAffirmations();
@@ -224,7 +300,7 @@ function toggleAffirmationPlayback(identifier) {
     return;
   }
   const item = affirmations.find((affirmation) => affirmation.identifier === identifier);
-  if (!item?.audioUrl) return;
+  if (!selectedVoiceVersion(item)?.audioUrl) return;
   stopLibraryPlayback(false);
   playLibraryItem(item);
 }
@@ -333,11 +409,27 @@ function renderFolderSelect() {
   select.value = selectedFolderId || folders[0].id;
 }
 
+function renderFolderVoicePicker() {
+  const picker = $("#folder-voice-picker");
+  const select = $("#folder-voice-select");
+  const complete = completeFolderVoices();
+  picker.hidden = !affirmations.length || !complete.length;
+  if (!complete.length) {
+    select.innerHTML = "";
+    return;
+  }
+  if (!complete.some((voice) => voice.id === selectedFolderVoiceId)) ensureSelectedFolderVoice();
+  select.innerHTML = complete.map((voice) => `<option value="${escapeHtml(voice.id)}">Voice: ${escapeHtml(voice.name)}</option>`).join("");
+  select.value = selectedFolderVoiceId || complete[0].id;
+}
+
 function renderAffirmations(loading = false, error = "") {
   const folder = folders.find((item) => item.id === selectedFolderId);
+  const voiceCount = folderVoiceAvailability().length;
   $("#folder-title").textContent = folder?.name || "Select a folder";
-  $("#folder-summary").textContent = `${affirmations.length} affirmation${affirmations.length === 1 ? "" : "s"}`;
+  $("#folder-summary").textContent = `${affirmations.length} affirmation${affirmations.length === 1 ? "" : "s"}${voiceCount ? ` · ${voiceCount} voice${voiceCount === 1 ? "" : "s"}` : ""}`;
   $("#add-to-folder").disabled = !folder;
+  $("#add-folder-voice").disabled = !AWS_CONFIGURED || !folder || !affirmations.length || !voices.length;
   $("#play-all").disabled = !folder || !affirmations.length;
   $("#play-all").innerHTML = isPlayingAll
     ? '<span aria-hidden="true">■</span> Stop all'
@@ -345,6 +437,7 @@ function renderAffirmations(loading = false, error = "") {
   $("#save-order").hidden = !orderChanged;
   $("#save-order").disabled = orderSaving;
   $("#save-order").textContent = orderSaving ? "Saving…" : "Save changes to AWS";
+  renderFolderVoicePicker();
   const list = $("#affirmation-list");
   if (error) return showLibraryError(error);
   if (loading) {
@@ -356,7 +449,14 @@ function renderAffirmations(loading = false, error = "") {
   } else {
     list.innerHTML = affirmations.map((item, index) => {
       const playing = activeAffirmationId === item.identifier && libraryAudio && !libraryAudio.paused;
-      return `<article class="affirmation-card${playing ? " playing" : ""}" data-affirmation-id="${escapeHtml(item.identifier)}"><span class="drag-handle" data-drag-id="${escapeHtml(item.identifier)}" draggable="true" aria-hidden="true" title="Drag to reorder">⋮⋮</span><div><p>${escapeHtml(item.title)}</p><div class="affirmation-meta"><span>${escapeHtml(item.voiceName)}</span><span>${new Date(item.createdAt).toLocaleString()}</span><span>${item.local ? "Browser preview" : "Saved in AWS"}</span></div></div><div class="card-actions"><button data-move-id="${escapeHtml(item.identifier)}" data-direction="-1" type="button" aria-label="Move affirmation up" title="Move up"${index === 0 ? " disabled" : ""}>↑</button><button data-move-id="${escapeHtml(item.identifier)}" data-direction="1" type="button" aria-label="Move affirmation down" title="Move down"${index === affirmations.length - 1 ? " disabled" : ""}>↓</button><button data-play-id="${escapeHtml(item.identifier)}" type="button" aria-label="${playing ? "Stop" : "Play"} ${escapeHtml(item.title)}" title="${playing ? "Stop" : "Play"}">${playing ? "■" : "▶"}</button><a href="${escapeHtml(item.audioUrl)}" download="affirmation-${item.identifier}.mp3" title="Download">⇩</a></div></article>`;
+      const voice = selectedVoiceVersion(item);
+      const voiceName = voice?.voiceName || "Voice unavailable";
+      const createdAt = voice?.createdAt || item.createdAt;
+      const playDisabled = !voice?.audioUrl;
+      const download = voice?.audioUrl
+        ? `<a href="${escapeHtml(voice.audioUrl)}" download="affirmation-${item.identifier}-${escapeHtml(voice.voiceId)}.mp3" title="Download ${escapeHtml(voiceName)}">⇩</a>`
+        : "";
+      return `<article class="affirmation-card${playing ? " playing" : ""}" data-affirmation-id="${escapeHtml(item.identifier)}"><span class="drag-handle" data-drag-id="${escapeHtml(item.identifier)}" draggable="true" aria-hidden="true" title="Drag to reorder">⋮⋮</span><div><p>${escapeHtml(item.title)}</p><div class="affirmation-meta"><span>${escapeHtml(voiceName)}</span><span>${new Date(createdAt).toLocaleString()}</span><span>${item.local ? "Browser preview" : "Saved in AWS"}</span></div></div><div class="card-actions"><button data-move-id="${escapeHtml(item.identifier)}" data-direction="-1" type="button" aria-label="Move affirmation up" title="Move up"${index === 0 ? " disabled" : ""}>↑</button><button data-move-id="${escapeHtml(item.identifier)}" data-direction="1" type="button" aria-label="Move affirmation down" title="Move down"${index === affirmations.length - 1 ? " disabled" : ""}>↓</button><button data-play-id="${escapeHtml(item.identifier)}" type="button" aria-label="${playing ? "Stop" : "Play"} ${escapeHtml(item.title)}" title="${playing ? "Stop" : "Play"}"${playDisabled ? " disabled" : ""}>${playing ? "■" : "▶"}</button>${download}</div></article>`;
     }).join("");
   }
 }
@@ -385,6 +485,7 @@ async function loadVoices(preferredId = selectedVoiceId) {
     voices = (await (await modalApi("/api/voices", {cache: "no-store"})).json()).voices || [];
     selectedVoiceId = voices.some((voice) => voice.id === preferredId) ? preferredId : voices[0]?.id || null;
     renderVoices();
+    renderAffirmations();
   } catch (error) {
     grid.innerHTML = `<div class="empty-state small">${escapeHtml(error.message)}</div>`;
   }
@@ -509,21 +610,12 @@ function showStatus(message, error = false) {
   status.className = `status show${error ? " error" : ""}`;
 }
 
-async function generate(event) {
-  event.preventDefault();
-  const folderId = $("#folder-select").value;
-  if (!folderId) return showStatus("Create a folder before generating an affirmation.", true);
-  const file = $("#custom-audio").files[0];
-  if (customMode && !file) return showStatus("Choose a custom voice sample.", true);
-  if (customMode && !$("#custom-consent").checked) return showStatus("Confirm that you have permission to use the custom voice.", true);
-  if (!customMode && !selectedVoiceId) return showStatus("Choose a voice.", true);
-
-  const text = $("#affirmation-text").value.trim();
-  const voice = voices.find((item) => item.id === selectedVoiceId);
+function voiceGenerationData(text, voiceId, referenceFile = null, consent = true) {
   const data = new FormData();
   data.set("text", text);
-  data.set("consent", customMode ? String($("#custom-consent").checked) : "true");
-  if (customMode) data.set("reference_audio", file, file.name); else data.set("voice_id", selectedVoiceId);
+  data.set("consent", String(consent));
+  if (referenceFile) data.set("reference_audio", referenceFile, referenceFile.name);
+  else data.set("voice_id", voiceId);
   data.set("speed", $("#speed").value);
   data.set("duration", "0");
   data.set("num_step", $("#steps").value);
@@ -540,6 +632,33 @@ async function generate(event) {
   data.set("class_temperature", "0");
   data.set("audio_chunk_duration", "15");
   data.set("audio_chunk_threshold", "30");
+  return data;
+}
+
+async function generateVoiceBlob(text, voiceId) {
+  return (await modalApi("/generate", {
+    method: "POST",
+    body: voiceGenerationData(text, voiceId),
+  })).blob();
+}
+
+async function generate(event) {
+  event.preventDefault();
+  const folderId = $("#folder-select").value;
+  if (!folderId) return showStatus("Create a folder before generating an affirmation.", true);
+  const file = $("#custom-audio").files[0];
+  if (customMode && !file) return showStatus("Choose a custom voice sample.", true);
+  if (customMode && !$("#custom-consent").checked) return showStatus("Confirm that you have permission to use the custom voice.", true);
+  if (!customMode && !selectedVoiceId) return showStatus("Choose a voice.", true);
+
+  const text = $("#affirmation-text").value.trim();
+  const voice = voices.find((item) => item.id === selectedVoiceId);
+  const data = voiceGenerationData(
+    text,
+    selectedVoiceId,
+    customMode ? file : null,
+    customMode ? $("#custom-consent").checked : true,
+  );
 
   const button = $("#generate-button");
   stopActivePreview();
@@ -637,16 +756,232 @@ async function confirmSave() {
   }
 }
 
+function stopBatchAudio() {
+  if (!batchAudio) return;
+  batchAudio.pause();
+  batchAudio.currentTime = 0;
+  batchAudio = null;
+}
+
+function clearFolderVoiceBatch() {
+  stopBatchAudio();
+  folderVoiceBatch?.items?.forEach((item) => {
+    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+  });
+  folderVoiceBatch = null;
+  $("#folder-voice-progress").hidden = true;
+  $("#folder-voice-list").innerHTML = "";
+  $("#save-folder-voice").hidden = true;
+  $("#folder-voice-error").textContent = "";
+}
+
+function folderVoiceStatusLabel(item) {
+  if (item.status === "existing") return "Already saved";
+  if (item.status === "generating") return "Generating…";
+  if (item.status === "ready") return "Ready to review";
+  if (item.status === "saving") return "Saving to AWS…";
+  if (item.status === "saved") return "Saved in AWS";
+  if (item.status === "generation-error") return "Generation failed";
+  if (item.status === "save-error") return "Save failed";
+  return "Waiting";
+}
+
+function renderFolderVoiceBatch() {
+  if (!folderVoiceBatch) return;
+  const items = folderVoiceBatch.items;
+  const completed = items.filter((item) => !["pending", "generating", "saving"].includes(item.status)).length;
+  const percent = items.length ? Math.round((completed / items.length) * 100) : 0;
+  const generating = items.some((item) => item.status === "generating");
+  const saving = items.some((item) => item.status === "saving");
+  const failures = items.filter((item) => item.status.endsWith("error")).length;
+  const ready = items.filter((item) => ["ready", "save-error"].includes(item.status)).length;
+
+  $("#folder-voice-progress").hidden = false;
+  $("#folder-voice-progress-title").textContent = saving
+    ? `Saving ${folderVoiceBatch.voice.name} to AWS`
+    : generating
+      ? `Generating ${folderVoiceBatch.voice.name}`
+      : failures
+        ? `${failures} recording${failures === 1 ? " needs" : "s need"} attention`
+        : ready
+          ? "Ready for your review"
+          : "Voice version complete";
+  $("#folder-voice-progress-detail").textContent = `${completed} of ${items.length} affirmations`;
+  $("#folder-voice-progress-percent").textContent = `${percent}%`;
+  $("#folder-voice-progress-fill").style.width = `${percent}%`;
+  $("#folder-voice-list").innerHTML = items.map((item, index) => {
+    const canPreview = item.status === "ready" || item.status === "save-error";
+    const error = item.error ? `<small>${escapeHtml(item.error)}</small>` : "";
+    return `<div class="batch-row batch-${escapeHtml(item.status)}"><span class="batch-index">${index + 1}</span><span class="batch-copy"><strong>${escapeHtml(item.title)}</strong><span>${folderVoiceStatusLabel(item)}</span>${error}</span>${canPreview ? `<button class="batch-play" data-batch-play="${escapeHtml(item.affirmationId)}" type="button" aria-label="Preview ${escapeHtml(item.title)}">▶</button>` : ""}</div>`;
+  }).join("");
+
+  const generateButton = $("#generate-folder-voice");
+  const generationFailures = items.filter((item) => item.status === "generation-error").length;
+  generateButton.hidden = !generationFailures && items.every((item) => item.status !== "pending");
+  generateButton.textContent = generationFailures ? `Retry ${generationFailures} failed recording${generationFailures === 1 ? "" : "s"}` : "Generate voice version";
+  generateButton.disabled = folderVoiceBusy;
+  $("#save-folder-voice").hidden = !ready || generationFailures > 0;
+  $("#save-folder-voice").disabled = folderVoiceBusy;
+  $("#save-folder-voice").textContent = items.some((item) => item.status === "save-error") ? "Retry saving to AWS" : `Save ${ready} recording${ready === 1 ? "" : "s"} to AWS`;
+  $("#folder-new-voice").disabled = folderVoiceBusy || Boolean(folderVoiceBatch);
+  $("#cancel-folder-voice").disabled = folderVoiceBusy;
+}
+
+function openFolderVoiceDialog() {
+  const folder = folders.find((item) => item.id === selectedFolderId);
+  if (!folder || !affirmations.length) return;
+  clearFolderVoiceBatch();
+  const availability = new Map(folderVoiceAvailability().map((voice) => [voice.id, voice.count]));
+  const candidates = voices.filter((voice) => (availability.get(voice.id) || 0) < affirmations.length);
+  $("#folder-voice-description").textContent = `Generate all ${affirmations.length} “${folder.name}” affirmations with another voice while keeping this folder and its order.`;
+  $("#folder-new-voice").innerHTML = candidates.map((voice) => {
+    const count = availability.get(voice.id) || 0;
+    const suffix = count ? ` · resume ${count}/${affirmations.length}` : "";
+    return `<option value="${escapeHtml(voice.id)}">${escapeHtml(voice.name)} — ${escapeHtml(voice.style)}${suffix}</option>`;
+  }).join("");
+  $("#folder-voice-error").textContent = candidates.length ? "" : "Every available voice is already complete for this folder.";
+  $("#generate-folder-voice").hidden = !candidates.length;
+  $("#generate-folder-voice").disabled = !candidates.length;
+  $("#generate-folder-voice").textContent = `Generate ${affirmations.length} recordings`;
+  $("#folder-new-voice").disabled = !candidates.length;
+  $("#folder-voice-dialog").showModal();
+}
+
+function buildFolderVoiceBatch(voice) {
+  return {
+    folderId: selectedFolderId,
+    voice,
+    items: affirmations.map((affirmation) => {
+      const existing = itemVoiceVersions(affirmation).find((item) => item.voiceId === voice.id);
+      return {
+        affirmationId: affirmation.identifier,
+        title: affirmation.title,
+        status: existing ? "existing" : "pending",
+        existing,
+        blob: null,
+        previewUrl: null,
+        error: "",
+      };
+    }),
+  };
+}
+
+async function generateFolderVoiceVersion(event) {
+  event.preventDefault();
+  if (folderVoiceBusy) return;
+  const voiceId = $("#folder-new-voice").value;
+  const voice = voices.find((item) => item.id === voiceId);
+  if (!voice) return $("#folder-voice-error").textContent = "Choose an available voice.";
+  if (!folderVoiceBatch || folderVoiceBatch.voice.id !== voiceId) folderVoiceBatch = buildFolderVoiceBatch(voice);
+
+  folderVoiceBusy = true;
+  $("#folder-voice-error").textContent = "";
+  renderFolderVoiceBatch();
+  const targets = folderVoiceBatch.items.filter((item) => ["pending", "generation-error"].includes(item.status));
+  for (const item of targets) {
+    item.status = "generating";
+    item.error = "";
+    renderFolderVoiceBatch();
+    try {
+      item.blob = await generateVoiceBlob(item.title, voice.id);
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      item.previewUrl = URL.createObjectURL(item.blob);
+      item.status = "ready";
+    } catch (error) {
+      item.status = "generation-error";
+      item.error = error.message || "Modal could not generate this recording.";
+    }
+    renderFolderVoiceBatch();
+  }
+  folderVoiceBusy = false;
+  renderFolderVoiceBatch();
+}
+
+async function saveFolderVoiceVersion() {
+  if (!folderVoiceBatch || folderVoiceBusy) return;
+  folderVoiceBusy = true;
+  $("#folder-voice-error").textContent = "";
+  const targets = folderVoiceBatch.items.filter((item) => ["ready", "save-error"].includes(item.status));
+  for (const item of targets) {
+    item.status = "saving";
+    item.error = "";
+    renderFolderVoiceBatch();
+    try {
+      const upload = await awsApi("/voice-uploads/presign", {
+        method: "POST",
+        body: JSON.stringify({
+          folderId: folderVoiceBatch.folderId,
+          affirmationId: item.affirmationId,
+          voiceId: folderVoiceBatch.voice.id,
+        }),
+      });
+      const uploaded = await fetch(upload.uploadUrl, {
+        method: "PUT",
+        headers: upload.requiredHeaders,
+        body: item.blob,
+      });
+      if (!uploaded.ok) throw new Error(`Audio upload failed (${uploaded.status}).`);
+      await awsApi("/voice-versions/confirm", {
+        method: "POST",
+        body: JSON.stringify({
+          folderId: folderVoiceBatch.folderId,
+          affirmationId: item.affirmationId,
+          voiceId: folderVoiceBatch.voice.id,
+          voiceName: folderVoiceBatch.voice.name,
+          audioKey: upload.audioKey,
+        }),
+      });
+      item.status = "saved";
+    } catch (error) {
+      item.status = "save-error";
+      item.error = error.message || "AWS could not save this recording.";
+    }
+    renderFolderVoiceBatch();
+  }
+  folderVoiceBusy = false;
+  const failed = folderVoiceBatch.items.filter((item) => item.status === "save-error").length;
+  if (failed) {
+    $("#folder-voice-error").textContent = `${failed} recording${failed === 1 ? " was" : "s were"} not saved. Your previews are still here; retry when ready.`;
+    return renderFolderVoiceBatch();
+  }
+
+  const completedVoice = folderVoiceBatch.voice;
+  const folderId = folderVoiceBatch.folderId;
+  selectedFolderVoiceId = completedVoice.id;
+  rememberFolderVoice(completedVoice.id);
+  await refreshFolders(folderId);
+  selectedFolderVoiceId = completedVoice.id;
+  rememberFolderVoice(completedVoice.id);
+  $("#folder-voice-dialog").close();
+  clearFolderVoiceBatch();
+  $("#library-status").textContent = `${completedVoice.name} was added to the same folder and saved in AWS.`;
+  renderAffirmations();
+}
+
+function playBatchPreview(affirmationId) {
+  const item = folderVoiceBatch?.items.find((candidate) => candidate.affirmationId === affirmationId);
+  if (!item?.previewUrl) return;
+  stopBatchAudio();
+  batchAudio = new Audio(item.previewUrl);
+  batchAudio.onended = () => { batchAudio = null; };
+  batchAudio.play().catch(() => {
+    stopBatchAudio();
+    $("#folder-voice-error").textContent = "Preview playback was blocked. Click play and try again.";
+  });
+}
+
 $("#login-form").addEventListener("submit", verifyLogin);
 $("#sign-out").addEventListener("click", () => { sessionStorage.removeItem("gratitude-voice-access"); location.reload(); });
 $$('[data-view], [data-view-link]').forEach((element) => element.addEventListener("click", (event) => { event.preventDefault(); showView(element.dataset.view || element.dataset.viewLink); }));
-$("#folder-list").addEventListener("click", async (event) => { const button = event.target.closest("[data-folder]"); if (!button) return; stopLibraryPlayback(false); orderChanged = false; selectedFolderId = button.dataset.folder; rememberFolder(); renderFolders(); await refreshAffirmations(); });
+$("#folder-list").addEventListener("click", async (event) => { const button = event.target.closest("[data-folder]"); if (!button) return; stopLibraryPlayback(false); orderChanged = false; selectedFolderId = button.dataset.folder; selectedFolderVoiceId = loadFolderVoicePreferences()[selectedFolderId] || null; rememberFolder(); renderFolders(); await refreshAffirmations(); });
 $("#new-folder").addEventListener("click", () => $("#folder-dialog").showModal());
 $("#folder-form").addEventListener("submit", async (event) => { event.preventDefault(); const button = event.submitter; button.disabled = true; $("#folder-error").textContent = ""; try { await createFolder($("#folder-name").value); event.target.reset(); $("#folder-dialog").close(); } catch (error) { $("#folder-error").textContent = error.message; } finally { button.disabled = false; } });
 $("#new-affirmation").addEventListener("click", () => { if (!folders.length) return $("#folder-dialog").showModal(); showView("generate"); });
 $("#add-to-folder").addEventListener("click", () => { if (!selectedFolderId) return; showView("generate"); });
 $("#play-all").addEventListener("click", togglePlayAll);
 $("#save-order").addEventListener("click", saveAffirmationOrder);
+$("#add-folder-voice").addEventListener("click", openFolderVoiceDialog);
+$("#folder-voice-select").addEventListener("change", (event) => { stopLibraryPlayback(false); selectedFolderVoiceId = event.target.value; rememberFolderVoice(); renderAffirmations(); });
 $("#folder-select").addEventListener("change", (event) => { selectedFolderId = event.target.value; rememberFolder(); });
 $("#affirmation-list").addEventListener("click", (event) => { const play = event.target.closest("[data-play-id]"); const move = event.target.closest("[data-move-id]"); if (play) return toggleAffirmationPlayback(play.dataset.playId); if (move) moveAffirmation(move.dataset.moveId, Number(move.dataset.direction)); });
 $("#affirmation-list").addEventListener("dragstart", (event) => { const handle = event.target.closest("[data-drag-id]"); if (!handle || orderSaving) return event.preventDefault(); draggedAffirmationId = handle.dataset.dragId; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", draggedAffirmationId); handle.closest(".affirmation-card")?.classList.add("dragging"); });
@@ -660,9 +995,23 @@ $("#affirmation-text").addEventListener("input", (event) => { $("#text-count").t
 [$("#speed"), $("#steps"), $("#guidance"), $("#word-gap")].forEach((input) => input.addEventListener("input", updateSettings));
 $("#generate-form").addEventListener("submit", generate);
 $("#confirm-save").addEventListener("click", confirmSave);
+$("#folder-voice-form").addEventListener("submit", generateFolderVoiceVersion);
+$("#save-folder-voice").addEventListener("click", saveFolderVoiceVersion);
+$("#folder-voice-list").addEventListener("click", (event) => { const button = event.target.closest("[data-batch-play]"); if (button) playBatchPreview(button.dataset.batchPlay); });
 $("#open-voice-manager").addEventListener("click", () => $("#voice-dialog").showModal());
 $("#voice-form").addEventListener("submit", async (event) => { event.preventDefault(); const button = $("#add-voice-button"); $("#voice-error").textContent = ""; button.disabled = true; button.textContent = "Adding…"; try { const data = new FormData(event.target); data.set("consent", String($("#voice-consent").checked)); const voice = (await (await modalApi("/api/voices", {method: "POST", body: data})).json()).voice; event.target.reset(); $("#voice-dialog").close(); await loadVoices(voice.id); } catch (error) { $("#voice-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Add to library"; } });
-$$('[data-close-dialog]').forEach((button) => button.addEventListener("click", () => button.closest("dialog").close()));
+$$('[data-close-dialog]').forEach((button) => button.addEventListener("click", () => {
+  const dialog = button.closest("dialog");
+  if (dialog.id === "folder-voice-dialog") {
+    if (folderVoiceBusy) return;
+    clearFolderVoiceBatch();
+  }
+  dialog.close();
+}));
+$("#folder-voice-dialog").addEventListener("cancel", (event) => {
+  if (folderVoiceBusy) return event.preventDefault();
+  clearFolderVoiceBatch();
+});
 
 updateSettings();
 if (accessCode) {

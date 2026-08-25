@@ -91,8 +91,13 @@
                 <span id="folder-summary">0 affirmations</span>
               </div>
               <div class="folder-actions">
+                <label class="folder-voice-picker" id="folder-voice-picker" hidden>
+                  <span class="sr-only">Voice version</span>
+                  <select id="folder-voice-select" aria-label="Voice version"></select>
+                </label>
                 <button class="secondary-button compact" id="play-all" type="button" disabled><span aria-hidden="true">▶</span> Play all</button>
                 <button class="secondary-button compact save-order-button" id="save-order" type="button" hidden>Save changes to AWS</button>
+                <button class="secondary-button compact" id="add-folder-voice" type="button" disabled>Add another voice <span aria-hidden="true">＋</span></button>
                 <button class="primary-button compact" id="add-to-folder" type="button" disabled>Add affirmation <span aria-hidden="true">＋</span></button>
               </div>
             </div>
@@ -221,6 +226,41 @@
       <label class="checkbox-row"><input id="voice-consent" type="checkbox" required><span>I have permission to add and use this voice.</span></label>
       <p class="form-error" id="voice-error" role="alert"></p>
       <div class="dialog-actions"><button class="secondary-button" data-close-dialog type="button">Cancel</button><button class="primary-button" id="add-voice-button" type="submit">Add to library</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="wide-dialog" id="folder-voice-dialog">
+    <form class="dialog-card" id="folder-voice-form">
+      <div class="dialog-heading">
+        <div>
+          <span class="eyebrow">Same folder · another voice</span>
+          <h3>Add a voice version</h3>
+        </div>
+        <button class="icon-button" data-close-dialog type="button" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy" id="folder-voice-description"></p>
+      <label class="field">
+        <span class="input-label">Voice to add</span>
+        <select id="folder-new-voice" required></select>
+      </label>
+      <div class="voice-version-note">
+        <strong>The folder will not be copied.</strong>
+        <span>The existing affirmation IDs and order stay unchanged. Only a new MP3 version is added for each affirmation.</span>
+      </div>
+      <section class="batch-panel" id="folder-voice-progress" hidden>
+        <div class="batch-progress-copy">
+          <div><strong id="folder-voice-progress-title">Preparing recordings</strong><small id="folder-voice-progress-detail">0 of 0</small></div>
+          <span id="folder-voice-progress-percent">0%</span>
+        </div>
+        <div class="progress-track" aria-hidden="true"><span id="folder-voice-progress-fill"></span></div>
+        <div class="batch-list" id="folder-voice-list"></div>
+      </section>
+      <p class="form-error" id="folder-voice-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button class="secondary-button" id="cancel-folder-voice" data-close-dialog type="button">Cancel</button>
+        <button class="secondary-button" id="save-folder-voice" type="button" hidden>Save all to AWS</button>
+        <button class="primary-button" id="generate-folder-voice" type="submit">Generate voice version</button>
+      </div>
     </form>
   </dialog>
 
