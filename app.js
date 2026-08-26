@@ -18,6 +18,9 @@ const VOICE_DISPLAY_NAMES = {
 };
 const VOICE_IMAGE_ASSETS = {
   alice: "./assets/voices/amelia.png",
+  lunaria: "./assets/voices/luna.png",
+  "male-voice-2": "./assets/voices/noah.png",
+  "male-voice-3": "./assets/voices/adrian.png",
 };
 
 const $ = (selector) => document.querySelector(selector);
