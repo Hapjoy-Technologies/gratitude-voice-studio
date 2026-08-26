@@ -4,9 +4,22 @@ const AWS_API_BASE_URL = "https://a6c42ttu3mqldnamijycyue27m0jgbae.lambda-url.us
 const AWS_CONFIGURED = !AWS_API_BASE_URL.startsWith("__");
 const LOCAL_FOLDER_STORAGE_KEY = "gratitude-voice-studio-folders-v1";
 const FOLDER_VOICE_STORAGE_KEY = "gratitude-voice-studio-folder-voices-v1";
+const VOICE_DISPLAY_NAMES = {
+  Alice: "Amelia",
+  "Mélanie": "Elena",
+  Sia: "Maya",
+  Anika: "Clara",
+  Britney: "Serena",
+  Lunaria: "Luna",
+  "Male Voice 1": "Ethan",
+  "Male Voice 2": "Noah",
+  "Male Voice 3": "Adrian",
+  "Male Voice 4": "Leo",
+};
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+const voiceDisplayName = (name) => VOICE_DISPLAY_NAMES[name] || name;
 
 let accessCode = sessionStorage.getItem("gratitude-voice-access") || "";
 let folders = [];
@@ -35,6 +48,7 @@ let orderSaving = false;
 let selectedFolderVoiceId = null;
 let folderVoiceBatch = null;
 let folderVoiceBusy = false;
+let folderVoiceDeleteBusy = false;
 let batchAudio = null;
 let batchAudioUrl = null;
 let activeBatchButton = null;
@@ -70,13 +84,15 @@ function rememberFolderVoice(voiceId = selectedFolderVoiceId) {
 }
 
 function itemVoiceVersions(item) {
-  if (Array.isArray(item?.voices) && item.voices.length) return item.voices;
+  if (Array.isArray(item?.voices) && item.voices.length) {
+    return item.voices.map((voice) => ({...voice, voiceName: voiceDisplayName(voice.voiceName)}));
+  }
   if (!item?.voiceId || !item?.audioUrl) return [];
   return [{
     affirmationId: item.identifier,
     folderId: item.folderId,
     voiceId: item.voiceId,
-    voiceName: item.voiceName,
+    voiceName: voiceDisplayName(item.voiceName),
     audioUrl: item.audioUrl,
     audioKey: item.audioKey,
     createdAt: item.createdAt,
@@ -415,8 +431,14 @@ function renderFolderSelect() {
 function renderFolderVoicePicker() {
   const picker = $("#folder-voice-picker");
   const select = $("#folder-voice-select");
+  const deleteButton = $("#delete-folder-voice");
   const complete = completeFolderVoices();
   picker.hidden = !affirmations.length || !complete.length;
+  deleteButton.hidden = !affirmations.length || !complete.length;
+  deleteButton.disabled = !AWS_CONFIGURED || complete.length < 2 || folderVoiceDeleteBusy;
+  deleteButton.title = complete.length < 2
+    ? "Add another complete voice before deleting this one"
+    : "Delete the selected voice from this folder";
   if (!complete.length) {
     select.innerHTML = "";
     return;
@@ -424,6 +446,62 @@ function renderFolderVoicePicker() {
   if (!complete.some((voice) => voice.id === selectedFolderVoiceId)) ensureSelectedFolderVoice();
   select.innerHTML = complete.map((voice) => `<option value="${escapeHtml(voice.id)}">Voice: ${escapeHtml(voice.name)}</option>`).join("");
   select.value = selectedFolderVoiceId || complete[0].id;
+}
+
+function openDeleteFolderVoiceDialog() {
+  const folder = folders.find((item) => item.id === selectedFolderId);
+  const complete = completeFolderVoices();
+  const selected = complete.find((voice) => voice.id === selectedFolderVoiceId);
+  const remaining = complete.filter((voice) => voice.id !== selectedFolderVoiceId);
+  if (!folder || !selected || !remaining.length) {
+    $("#library-status").textContent = "Add another complete voice before deleting this one.";
+    return;
+  }
+  $("#delete-folder-voice-description").textContent = `Delete “${selected.name}” and its ${affirmations.length} recording${affirmations.length === 1 ? "" : "s"} from “${folder.name}”?`;
+  $("#replacement-folder-voice").innerHTML = remaining.map((voice) => `<option value="${escapeHtml(voice.id)}">${escapeHtml(voice.name)}</option>`).join("");
+  $("#delete-folder-voice-error").textContent = "";
+  $("#confirm-delete-folder-voice").disabled = false;
+  $("#confirm-delete-folder-voice").textContent = "Delete from this folder";
+  $("#delete-folder-voice-dialog").showModal();
+}
+
+async function deleteSelectedFolderVoice(event) {
+  event.preventDefault();
+  if (folderVoiceDeleteBusy || !selectedFolderId || !selectedFolderVoiceId) return;
+  const folderId = selectedFolderId;
+  const voiceId = selectedFolderVoiceId;
+  const replacementVoiceId = $("#replacement-folder-voice").value;
+  const selected = completeFolderVoices().find((voice) => voice.id === voiceId);
+  if (!replacementVoiceId || replacementVoiceId === voiceId) {
+    $("#delete-folder-voice-error").textContent = "Choose a different voice to keep active.";
+    return;
+  }
+
+  folderVoiceDeleteBusy = true;
+  const button = $("#confirm-delete-folder-voice");
+  button.disabled = true;
+  button.textContent = "Deleting from AWS…";
+  $("#delete-folder-voice-error").textContent = "";
+  renderFolderVoicePicker();
+  try {
+    stopLibraryPlayback(false);
+    const result = await awsApi(`/folders/${encodeURIComponent(folderId)}/voices/${encodeURIComponent(voiceId)}`, {
+      method: "DELETE",
+      body: JSON.stringify({replacementVoiceId}),
+    });
+    selectedFolderVoiceId = replacementVoiceId;
+    rememberFolderVoice(replacementVoiceId);
+    $("#delete-folder-voice-dialog").close();
+    await refreshFolders(folderId);
+    $("#library-status").textContent = `${selected?.name || "Voice"} was removed from this folder in AWS (${result.deletedRecordings} recordings).`;
+  } catch (error) {
+    $("#delete-folder-voice-error").textContent = error.message || "Could not delete this voice.";
+  } finally {
+    folderVoiceDeleteBusy = false;
+    button.disabled = false;
+    button.textContent = "Delete from this folder";
+    renderFolderVoicePicker();
+  }
 }
 
 function renderAffirmations(loading = false, error = "") {
@@ -485,7 +563,8 @@ async function createFolder(name) {
 async function loadVoices(preferredId = selectedVoiceId) {
   const grid = $("#voice-grid");
   try {
-    voices = (await (await modalApi("/api/voices", {cache: "no-store"})).json()).voices || [];
+    voices = ((await (await modalApi("/api/voices", {cache: "no-store"})).json()).voices || [])
+      .map((voice) => ({...voice, name: voiceDisplayName(voice.name)}));
     selectedVoiceId = voices.some((voice) => voice.id === preferredId) ? preferredId : voices[0]?.id || null;
     renderVoices();
     renderAffirmations();
@@ -1061,6 +1140,7 @@ $("#add-to-folder").addEventListener("click", () => { if (!selectedFolderId) ret
 $("#play-all").addEventListener("click", togglePlayAll);
 $("#save-order").addEventListener("click", saveAffirmationOrder);
 $("#add-folder-voice").addEventListener("click", openFolderVoiceDialog);
+$("#delete-folder-voice").addEventListener("click", openDeleteFolderVoiceDialog);
 $("#folder-voice-select").addEventListener("change", (event) => { stopLibraryPlayback(false); selectedFolderVoiceId = event.target.value; rememberFolderVoice(); renderAffirmations(); });
 $("#folder-select").addEventListener("change", (event) => { selectedFolderId = event.target.value; rememberFolder(); });
 $("#affirmation-list").addEventListener("click", (event) => { const play = event.target.closest("[data-play-id]"); const move = event.target.closest("[data-move-id]"); if (play) return toggleAffirmationPlayback(play.dataset.playId); if (move) moveAffirmation(move.dataset.moveId, Number(move.dataset.direction)); });
@@ -1076,6 +1156,7 @@ $("#affirmation-text").addEventListener("input", (event) => { $("#text-count").t
 $("#generate-form").addEventListener("submit", generate);
 $("#confirm-save").addEventListener("click", confirmSave);
 $("#folder-voice-form").addEventListener("submit", generateFolderVoiceVersion);
+$("#delete-folder-voice-form").addEventListener("submit", deleteSelectedFolderVoice);
 $("#save-folder-voice").addEventListener("click", saveFolderVoiceVersion);
 $("#folder-new-voice").addEventListener("change", () => { stopActivePreview(); updateSelectedFolderVoiceSummary(); });
 $("#preview-folder-voice").addEventListener("click", (event) => { const voiceId = $("#folder-new-voice").value; if (voiceId) previewVoice(voiceId, event.currentTarget); });
@@ -1088,11 +1169,15 @@ $$('[data-close-dialog]').forEach((button) => button.addEventListener("click", (
     if (folderVoiceBusy) return;
     clearFolderVoiceBatch();
   }
+  if (dialog.id === "delete-folder-voice-dialog" && folderVoiceDeleteBusy) return;
   dialog.close();
 }));
 $("#folder-voice-dialog").addEventListener("cancel", (event) => {
   if (folderVoiceBusy) return event.preventDefault();
   clearFolderVoiceBatch();
+});
+$("#delete-folder-voice-dialog").addEventListener("cancel", (event) => {
+  if (folderVoiceDeleteBusy) event.preventDefault();
 });
 
 updateSettings();

@@ -109,6 +109,9 @@ nav { display: flex; align-items: center; gap: 3px; padding: 4px; border: 1px so
 .voice-version-button { color: var(--plum-deep); border-color: rgba(104, 76, 114, .34); background: var(--surface-tint); box-shadow: 0 7px 16px -14px rgba(81, 57, 91, .65); }
 .voice-version-button:hover:not(:disabled) { color: #fff; border-color: var(--plum); background: var(--plum); }
 .voice-version-button .button-icon { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; color: inherit; background: rgba(104, 76, 114, .1); font-size: 12px !important; }
+.delete-folder-voice-button { color: var(--danger); border-color: rgba(166, 70, 70, .28); background: #fbf0ef; }
+.delete-folder-voice-button:hover:not(:disabled) { color: #fff; border-color: var(--danger); background: var(--danger); }
+.delete-folder-voice-button:disabled { opacity: .42; cursor: not-allowed; }
 .library-status { min-height: 0; color: var(--muted); font-size: 10px; }
 .library-status:not(:empty) { padding-top: 12px; }
 .affirmation-list { display: grid; gap: 10px; padding-top: 18px; }
@@ -212,6 +215,15 @@ dialog::backdrop { background: rgba(45, 39, 48, .22); backdrop-filter: blur(6px)
 .dialog-copy { margin: -4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .form-error { min-height: 16px; margin: -5px 0 0; color: var(--danger); font-size: 10px; line-height: 1.45; }
+.danger-button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 0 20px; border: 0; border-radius: 999px; color: #fff; background: var(--danger); font-weight: 700; box-shadow: 0 10px 20px -14px rgba(166, 70, 70, .72); transition: transform .16s ease, background .16s ease, box-shadow .16s ease; }
+.danger-button:hover:not(:disabled) { background: #8f3838; transform: translateY(-1px); box-shadow: 0 14px 26px -15px rgba(166, 70, 70, .78); }
+.danger-button:disabled { opacity: .48; cursor: not-allowed; }
+.danger-eyebrow { color: var(--danger); }
+.delete-voice-warning { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: start; gap: 10px; padding: 13px; border: 1px solid rgba(166, 70, 70, .2); border-radius: 14px; background: #fbf0ef; }
+.delete-voice-warning > span { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--danger); font-family: var(--serif); font-weight: 700; }
+.delete-voice-warning > div { display: grid; gap: 3px; }
+.delete-voice-warning strong { color: #7f3434; font-size: 11px; }
+.delete-voice-warning small { color: var(--muted); font-size: 9px; line-height: 1.5; }
 .folder-voice-step { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; gap: 10px; }
 .folder-voice-step > span { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--plum); font-family: var(--serif); font-size: 13px; }
 .folder-voice-step > div { display: grid; gap: 2px; }
