@@ -5,21 +5,21 @@ const AWS_CONFIGURED = !AWS_API_BASE_URL.startsWith("__");
 const LOCAL_FOLDER_STORAGE_KEY = "gratitude-voice-studio-folders-v1";
 const FOLDER_VOICE_STORAGE_KEY = "gratitude-voice-studio-folder-voices-v1";
 const VOICE_DISPLAY_NAMES = {
-  Alice: "Amelia",
-  "Mélanie": "Elena",
-  Sia: "Maya",
-  Anika: "Clara",
-  Britney: "Serena",
-  Lunaria: "Luna",
-  "Male Voice 1": "Ethan",
-  "Male Voice 2": "Noah",
-  "Male Voice 3": "Adrian",
-  "Male Voice 4": "Leo",
+  alice: "Amelia",
+  "mélanie": "Elena",
+  sia: "Maya",
+  anika: "Clara",
+  britney: "Serena",
+  lunaria: "Luna",
+  "male voice 1": "Ethan",
+  "male voice 2": "Noah",
+  "male voice 3": "Adrian",
+  "male voice 4": "Leo",
 };
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
-const voiceDisplayName = (name) => VOICE_DISPLAY_NAMES[name] || name;
+const voiceDisplayName = (name) => VOICE_DISPLAY_NAMES[String(name || "").trim().toLocaleLowerCase()] || name;
 
 let accessCode = sessionStorage.getItem("gratitude-voice-access") || "";
 let folders = [];
