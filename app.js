@@ -16,6 +16,9 @@ const VOICE_DISPLAY_NAMES = {
   "male voice 3": "Adrian",
   "male voice 4": "Leo",
 };
+const VOICE_IMAGE_ASSETS = {
+  alice: "./assets/voices/amelia.png",
+};
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -142,6 +145,28 @@ function escapeHtml(value) {
 
 function initials(name) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+}
+
+function voiceImageUrl(voiceId) {
+  return VOICE_IMAGE_ASSETS[String(voiceId || "").trim().toLocaleLowerCase()] || "";
+}
+
+function voiceAvatarMarkup(voice, className = "voice-avatar") {
+  const imageUrl = voiceImageUrl(voice?.id || voice?.voiceId);
+  const name = voice?.name || voice?.voiceName || "Voice";
+  if (imageUrl) {
+    return `<span class="${className} has-image"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(name)} portrait"></span>`;
+  }
+  return `<span class="${className}">${escapeHtml(initials(name))}</span>`;
+}
+
+function setVoiceAvatar(element, voice) {
+  const imageUrl = voiceImageUrl(voice?.id || voice?.voiceId);
+  const name = voice?.name || voice?.voiceName || "Voice";
+  element.classList.toggle("has-image", Boolean(imageUrl));
+  element.innerHTML = imageUrl
+    ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(name)} portrait">`
+    : escapeHtml(voice ? initials(name) : "—");
 }
 
 function apiErrorMessage(payload, status) {
@@ -431,6 +456,7 @@ function renderFolderSelect() {
 function renderFolderVoicePicker() {
   const picker = $("#folder-voice-picker");
   const select = $("#folder-voice-select");
+  const avatar = $("#folder-voice-avatar");
   const deleteButton = $("#delete-folder-voice");
   const complete = completeFolderVoices();
   picker.hidden = !affirmations.length || !complete.length;
@@ -441,11 +467,18 @@ function renderFolderVoicePicker() {
     : "Delete the selected voice from this folder";
   if (!complete.length) {
     select.innerHTML = "";
+    avatar.hidden = true;
     return;
   }
   if (!complete.some((voice) => voice.id === selectedFolderVoiceId)) ensureSelectedFolderVoice();
   select.innerHTML = complete.map((voice) => `<option value="${escapeHtml(voice.id)}">Voice: ${escapeHtml(voice.name)}</option>`).join("");
   select.value = selectedFolderVoiceId || complete[0].id;
+  const selected = complete.find((voice) => voice.id === select.value) || complete[0];
+  const selectedImage = voiceImageUrl(selected?.id);
+  avatar.hidden = !selectedImage;
+  avatar.innerHTML = selectedImage
+    ? `<img src="${escapeHtml(selectedImage)}" alt="${escapeHtml(selected.name)} portrait">`
+    : "";
 }
 
 function openDeleteFolderVoiceDialog() {
@@ -537,7 +570,11 @@ function renderAffirmations(loading = false, error = "") {
       const download = voice?.audioUrl
         ? `<a href="${escapeHtml(voice.audioUrl)}" download="affirmation-${item.identifier}-${escapeHtml(voice.voiceId)}.mp3" title="Download ${escapeHtml(voiceName)}">⇩</a>`
         : "";
-      return `<article class="affirmation-card${playing ? " playing" : ""}" data-affirmation-id="${escapeHtml(item.identifier)}"><span class="drag-handle" data-drag-id="${escapeHtml(item.identifier)}" draggable="true" aria-hidden="true" title="Drag to reorder">⋮⋮</span><div><p>${escapeHtml(item.title)}</p><div class="affirmation-meta"><span>${escapeHtml(voiceName)}</span><span>${new Date(createdAt).toLocaleString()}</span><span>${item.local ? "Browser preview" : "Saved in AWS"}</span></div></div><div class="card-actions"><button data-move-id="${escapeHtml(item.identifier)}" data-direction="-1" type="button" aria-label="Move affirmation up" title="Move up"${index === 0 ? " disabled" : ""}>↑</button><button data-move-id="${escapeHtml(item.identifier)}" data-direction="1" type="button" aria-label="Move affirmation down" title="Move down"${index === affirmations.length - 1 ? " disabled" : ""}>↓</button><button data-play-id="${escapeHtml(item.identifier)}" type="button" aria-label="${playing ? "Stop" : "Play"} ${escapeHtml(item.title)}" title="${playing ? "Stop" : "Play"}"${playDisabled ? " disabled" : ""}>${playing ? "■" : "▶"}</button>${download}</div></article>`;
+      const voiceImage = voiceImageUrl(voice?.voiceId);
+      const voiceLabel = voiceImage
+        ? `<span class="affirmation-voice"><img src="${escapeHtml(voiceImage)}" alt="">${escapeHtml(voiceName)}</span>`
+        : `<span>${escapeHtml(voiceName)}</span>`;
+      return `<article class="affirmation-card${playing ? " playing" : ""}" data-affirmation-id="${escapeHtml(item.identifier)}"><span class="drag-handle" data-drag-id="${escapeHtml(item.identifier)}" draggable="true" aria-hidden="true" title="Drag to reorder">⋮⋮</span><div><p>${escapeHtml(item.title)}</p><div class="affirmation-meta">${voiceLabel}<span>${new Date(createdAt).toLocaleString()}</span><span>${item.local ? "Browser preview" : "Saved in AWS"}</span></div></div><div class="card-actions"><button data-move-id="${escapeHtml(item.identifier)}" data-direction="-1" type="button" aria-label="Move affirmation up" title="Move up"${index === 0 ? " disabled" : ""}>↑</button><button data-move-id="${escapeHtml(item.identifier)}" data-direction="1" type="button" aria-label="Move affirmation down" title="Move down"${index === affirmations.length - 1 ? " disabled" : ""}>↓</button><button data-play-id="${escapeHtml(item.identifier)}" type="button" aria-label="${playing ? "Stop" : "Play"} ${escapeHtml(item.title)}" title="${playing ? "Stop" : "Play"}"${playDisabled ? " disabled" : ""}>${playing ? "■" : "▶"}</button>${download}</div></article>`;
     }).join("");
   }
 }
@@ -580,7 +617,7 @@ function renderVoices() {
     grid.innerHTML = '<div class="empty-state small">No voices available.</div>';
     return;
   }
-  grid.innerHTML = voices.map((voice) => `<div class="voice-card${voice.id === selectedVoiceId && !customMode ? " selected" : ""}" data-voice="${voice.id}" role="radio" aria-checked="${voice.id === selectedVoiceId && !customMode}"><span class="voice-avatar">${escapeHtml(initials(voice.name))}</span><span class="voice-copy"><strong>${escapeHtml(voice.name)}</strong><small>${escapeHtml(voice.style)}</small></span><span class="voice-actions"><button data-preview="${voice.id}" data-default-label="Preview ${escapeHtml(voice.name)}" type="button" aria-label="Preview ${escapeHtml(voice.name)}" aria-pressed="false">▶</button><button class="delete-voice" data-delete-voice="${voice.id}" type="button" aria-label="Delete ${escapeHtml(voice.name)}">×</button></span></div>`).join("");
+  grid.innerHTML = voices.map((voice) => `<div class="voice-card${voice.id === selectedVoiceId && !customMode ? " selected" : ""}" data-voice="${voice.id}" role="radio" aria-checked="${voice.id === selectedVoiceId && !customMode}">${voiceAvatarMarkup(voice)}<span class="voice-copy"><strong>${escapeHtml(voice.name)}</strong><small>${escapeHtml(voice.style)}</small></span><span class="voice-actions"><button data-preview="${voice.id}" data-default-label="Preview ${escapeHtml(voice.name)}" type="button" aria-label="Preview ${escapeHtml(voice.name)}" aria-pressed="false">▶</button><button class="delete-voice" data-delete-voice="${voice.id}" type="button" aria-label="Delete ${escapeHtml(voice.name)}">×</button></span></div>`).join("");
 }
 
 function stopActivePreview() {
@@ -887,7 +924,7 @@ function folderVoiceStatusLabel(item) {
 
 function updateSelectedFolderVoiceSummary() {
   const voice = voices.find((item) => item.id === $("#folder-new-voice").value);
-  $("#selected-folder-voice-avatar").textContent = voice ? initials(voice.name) : "—";
+  setVoiceAvatar($("#selected-folder-voice-avatar"), voice);
   $("#selected-folder-voice-name").textContent = voice?.name || "Choose a voice";
   $("#selected-folder-voice-style").textContent = voice?.style || "Select a voice above";
   $("#folder-recording-count").textContent = `${affirmations.length} recording${affirmations.length === 1 ? "" : "s"}`;
