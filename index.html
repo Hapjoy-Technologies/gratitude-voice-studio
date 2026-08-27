@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Newsreader:opsz,wght@6..72,500;6..72,600&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=background-music-2">
+  <link rel="stylesheet" href="./styles.css?v=voice-menu-1">
 </head>
 <body>
   <div class="ambient-shape shape-one" aria-hidden="true"></div>
@@ -91,13 +91,20 @@
                 <span id="folder-summary">0 affirmations</span>
               </div>
               <div class="folder-actions">
-                <label class="folder-voice-picker" id="folder-voice-picker" hidden>
-                  <span class="sr-only">Voice version</span>
-                  <span class="folder-voice-avatar" id="folder-voice-avatar" hidden></span>
-                  <select id="folder-voice-select" aria-label="Voice version"></select>
-                </label>
+                <div class="folder-voice-picker" id="folder-voice-picker" hidden>
+                  <button class="folder-voice-trigger" id="folder-voice-trigger" type="button" aria-haspopup="listbox" aria-controls="folder-voice-menu" aria-expanded="false">
+                    <span class="folder-voice-avatar" id="folder-voice-avatar" aria-hidden="true"></span>
+                    <span class="folder-voice-current"><small>Voice</small><strong id="folder-voice-name">Select voice</strong></span>
+                    <span class="folder-voice-chevron" aria-hidden="true">⌄</span>
+                  </button>
+                  <div class="folder-voice-menu" id="folder-voice-menu" hidden>
+                    <div class="folder-voice-menu-heading">Available voices</div>
+                    <div class="folder-voice-options" id="folder-voice-options" role="listbox" aria-label="Voice version"></div>
+                    <div class="folder-voice-menu-divider"></div>
+                    <button class="folder-voice-remove" id="delete-folder-voice" type="button"><span aria-hidden="true">×</span> Remove selected voice</button>
+                  </div>
+                </div>
                 <button class="secondary-button compact music-button" id="background-music" type="button" disabled><span aria-hidden="true">♫</span> <span id="background-music-label">Music</span></button>
-                <button class="secondary-button compact delete-folder-voice-button" id="delete-folder-voice" type="button" hidden><span aria-hidden="true">×</span> Delete voice</button>
                 <button class="secondary-button compact" id="play-all" type="button" disabled><span aria-hidden="true">▶</span> Play all</button>
                 <button class="secondary-button compact save-order-button" id="save-order" type="button" hidden>Save changes to AWS</button>
                 <button class="secondary-button compact voice-version-button" id="add-folder-voice" type="button" disabled><span class="button-icon" aria-hidden="true">＋</span> Add another voice</button>
@@ -330,7 +337,7 @@
       <div class="dialog-heading">
         <div>
           <span class="eyebrow danger-eyebrow">Folder voice</span>
-          <h3>Delete voice version?</h3>
+          <h3>Remove voice version?</h3>
         </div>
         <button class="icon-button" data-close-dialog type="button" aria-label="Close">×</button>
       </div>
@@ -346,11 +353,11 @@
       <p class="form-error" id="delete-folder-voice-error" role="alert"></p>
       <div class="dialog-actions">
         <button class="secondary-button" data-close-dialog type="button">Cancel</button>
-        <button class="danger-button" id="confirm-delete-folder-voice" type="submit">Delete from this folder</button>
+        <button class="danger-button" id="confirm-delete-folder-voice" type="submit">Remove from this folder</button>
       </div>
     </form>
   </dialog>
 
-  <script src="./app.js?v=background-music-2"></script>
+  <script src="./app.js?v=voice-menu-1"></script>
 </body>
 </html>

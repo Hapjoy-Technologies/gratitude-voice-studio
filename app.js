@@ -795,30 +795,70 @@ function renderFolderSelect() {
 
 function renderFolderVoicePicker() {
   const picker = $("#folder-voice-picker");
-  const select = $("#folder-voice-select");
+  const trigger = $("#folder-voice-trigger");
+  const menu = $("#folder-voice-menu");
+  const options = $("#folder-voice-options");
   const avatar = $("#folder-voice-avatar");
+  const name = $("#folder-voice-name");
   const deleteButton = $("#delete-folder-voice");
   const complete = completeFolderVoices();
   picker.hidden = !affirmations.length || !complete.length;
-  deleteButton.hidden = !affirmations.length || !complete.length;
   deleteButton.disabled = !AWS_CONFIGURED || complete.length < 2 || folderVoiceDeleteBusy;
+  deleteButton.innerHTML = folderVoiceDeleteBusy
+    ? '<span aria-hidden="true">…</span> Removing voice…'
+    : '<span aria-hidden="true">×</span> Remove selected voice';
   deleteButton.title = complete.length < 2
-    ? "Add another complete voice before deleting this one"
-    : "Delete the selected voice from this folder";
+    ? "Add another complete voice before removing this one"
+    : "Remove the selected voice from this folder";
   if (!complete.length) {
-    select.innerHTML = "";
-    avatar.hidden = true;
+    options.innerHTML = "";
+    avatar.innerHTML = "";
+    name.textContent = "Select voice";
+    menu.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
     return;
   }
   if (!complete.some((voice) => voice.id === selectedFolderVoiceId)) ensureSelectedFolderVoice();
-  select.innerHTML = complete.map((voice) => `<option value="${escapeHtml(voice.id)}">Voice: ${escapeHtml(voice.name)}</option>`).join("");
-  select.value = selectedFolderVoiceId || complete[0].id;
-  const selected = complete.find((voice) => voice.id === select.value) || complete[0];
+  const selected = complete.find((voice) => voice.id === selectedFolderVoiceId) || complete[0];
   const selectedImage = voiceImageUrl(selected?.id);
-  avatar.hidden = !selectedImage;
   avatar.innerHTML = selectedImage
-    ? `<img src="${escapeHtml(selectedImage)}" alt="${escapeHtml(selected.name)} portrait">`
-    : "";
+    ? `<img src="${escapeHtml(selectedImage)}" alt="">`
+    : escapeHtml(selected.name.slice(0, 1).toUpperCase());
+  name.textContent = selected.name;
+  trigger.setAttribute("aria-label", `Voice: ${selected.name}`);
+  options.innerHTML = complete.map((voice) => {
+    const isSelected = voice.id === selected.id;
+    const image = voiceImageUrl(voice.id);
+    const portrait = image
+      ? `<img src="${escapeHtml(image)}" alt="">`
+      : escapeHtml(voice.name.slice(0, 1).toUpperCase());
+    return `<button class="folder-voice-option${isSelected ? " selected" : ""}" data-folder-voice-option="${escapeHtml(voice.id)}" type="button" role="option" aria-selected="${isSelected}"><span class="folder-voice-option-avatar" aria-hidden="true">${portrait}</span><span class="folder-voice-option-copy"><strong>${escapeHtml(voice.name)}</strong><small>${voice.count} recording${voice.count === 1 ? "" : "s"}</small></span><span class="folder-voice-option-check" aria-hidden="true">✓</span></button>`;
+  }).join("");
+}
+
+function closeFolderVoiceMenu(focusTrigger = false) {
+  const menu = $("#folder-voice-menu");
+  const trigger = $("#folder-voice-trigger");
+  menu.hidden = true;
+  trigger.setAttribute("aria-expanded", "false");
+  if (focusTrigger) trigger.focus();
+}
+
+function toggleFolderVoiceMenu() {
+  const menu = $("#folder-voice-menu");
+  const opening = menu.hidden;
+  menu.hidden = !opening;
+  $("#folder-voice-trigger").setAttribute("aria-expanded", String(opening));
+  if (opening) $("#folder-voice-options").querySelector(".selected")?.focus();
+}
+
+function selectFolderVoice(voiceId) {
+  if (!completeFolderVoices().some((voice) => voice.id === voiceId)) return;
+  stopLibraryPlayback(false);
+  selectedFolderVoiceId = voiceId;
+  rememberFolderVoice();
+  closeFolderVoiceMenu();
+  renderAffirmations();
 }
 
 function openDeleteFolderVoiceDialog() {
@@ -827,14 +867,14 @@ function openDeleteFolderVoiceDialog() {
   const selected = complete.find((voice) => voice.id === selectedFolderVoiceId);
   const remaining = complete.filter((voice) => voice.id !== selectedFolderVoiceId);
   if (!folder || !selected || !remaining.length) {
-    $("#library-status").textContent = "Add another complete voice before deleting this one.";
+    $("#library-status").textContent = "Add another complete voice before removing this one.";
     return;
   }
-  $("#delete-folder-voice-description").textContent = `Delete “${selected.name}” and its ${affirmations.length} recording${affirmations.length === 1 ? "" : "s"} from “${folder.name}”?`;
+  $("#delete-folder-voice-description").textContent = `Remove “${selected.name}” and its ${affirmations.length} recording${affirmations.length === 1 ? "" : "s"} from “${folder.name}”?`;
   $("#replacement-folder-voice").innerHTML = remaining.map((voice) => `<option value="${escapeHtml(voice.id)}">${escapeHtml(voice.name)}</option>`).join("");
   $("#delete-folder-voice-error").textContent = "";
   $("#confirm-delete-folder-voice").disabled = false;
-  $("#confirm-delete-folder-voice").textContent = "Delete from this folder";
+  $("#confirm-delete-folder-voice").textContent = "Remove from this folder";
   $("#delete-folder-voice-dialog").showModal();
 }
 
@@ -853,7 +893,7 @@ async function deleteSelectedFolderVoice(event) {
   folderVoiceDeleteBusy = true;
   const button = $("#confirm-delete-folder-voice");
   button.disabled = true;
-  button.textContent = "Deleting from AWS…";
+  button.textContent = "Removing from AWS…";
   $("#delete-folder-voice-error").textContent = "";
   renderFolderVoicePicker();
   try {
@@ -868,11 +908,11 @@ async function deleteSelectedFolderVoice(event) {
     await refreshFolders(folderId);
     $("#library-status").textContent = `${selected?.name || "Voice"} was removed from this folder in AWS (${result.deletedRecordings} recordings).`;
   } catch (error) {
-    $("#delete-folder-voice-error").textContent = error.message || "Could not delete this voice.";
+    $("#delete-folder-voice-error").textContent = error.message || "Could not remove this voice.";
   } finally {
     folderVoiceDeleteBusy = false;
     button.disabled = false;
-    button.textContent = "Delete from this folder";
+    button.textContent = "Remove from this folder";
     renderFolderVoicePicker();
   }
 }
@@ -1510,7 +1550,7 @@ async function playBatchPreview(affirmationId, button) {
 $("#login-form").addEventListener("submit", verifyLogin);
 $("#sign-out").addEventListener("click", () => { sessionStorage.removeItem("gratitude-voice-access"); location.reload(); });
 $$('[data-view], [data-view-link]').forEach((element) => element.addEventListener("click", (event) => { event.preventDefault(); showView(element.dataset.view || element.dataset.viewLink); }));
-$("#folder-list").addEventListener("click", async (event) => { const button = event.target.closest("[data-folder]"); if (!button) return; stopLibraryPlayback(false); orderChanged = false; selectedFolderId = button.dataset.folder; selectedFolderVoiceId = loadFolderVoicePreferences()[selectedFolderId] || null; restoreBackgroundMusicPreference(); rememberFolder(); renderFolders(); await refreshAffirmations(); });
+$("#folder-list").addEventListener("click", async (event) => { const button = event.target.closest("[data-folder]"); if (!button) return; closeFolderVoiceMenu(); stopLibraryPlayback(false); orderChanged = false; selectedFolderId = button.dataset.folder; selectedFolderVoiceId = loadFolderVoicePreferences()[selectedFolderId] || null; restoreBackgroundMusicPreference(); rememberFolder(); renderFolders(); await refreshAffirmations(); });
 $("#new-folder").addEventListener("click", () => $("#folder-dialog").showModal());
 $("#folder-form").addEventListener("submit", async (event) => { event.preventDefault(); const button = event.submitter; button.disabled = true; $("#folder-error").textContent = ""; try { await createFolder($("#folder-name").value); event.target.reset(); $("#folder-dialog").close(); } catch (error) { $("#folder-error").textContent = error.message; } finally { button.disabled = false; } });
 $("#new-affirmation").addEventListener("click", () => { if (!folders.length) return $("#folder-dialog").showModal(); showView("generate"); });
@@ -1535,8 +1575,27 @@ $("#music-list").addEventListener("click", (event) => {
 $("#music-upload-form").addEventListener("submit", uploadBackgroundMusic);
 $("#save-order").addEventListener("click", saveAffirmationOrder);
 $("#add-folder-voice").addEventListener("click", openFolderVoiceDialog);
-$("#delete-folder-voice").addEventListener("click", openDeleteFolderVoiceDialog);
-$("#folder-voice-select").addEventListener("change", (event) => { stopLibraryPlayback(false); selectedFolderVoiceId = event.target.value; rememberFolderVoice(); renderAffirmations(); });
+$("#folder-voice-trigger").addEventListener("click", (event) => { event.stopPropagation(); toggleFolderVoiceMenu(); });
+$("#folder-voice-options").addEventListener("click", (event) => {
+  const option = event.target.closest("[data-folder-voice-option]");
+  if (option) selectFolderVoice(option.dataset.folderVoiceOption);
+});
+$("#folder-voice-options").addEventListener("keydown", (event) => {
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+  const options = $$("#folder-voice-options [data-folder-voice-option]");
+  const current = options.indexOf(document.activeElement);
+  if (!options.length) return;
+  event.preventDefault();
+  const next = event.key === "Home"
+    ? 0
+    : event.key === "End"
+      ? options.length - 1
+      : (current + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
+  options[next].focus();
+});
+$("#delete-folder-voice").addEventListener("click", () => { closeFolderVoiceMenu(); openDeleteFolderVoiceDialog(); });
+document.addEventListener("click", (event) => { if (!event.target.closest("#folder-voice-picker")) closeFolderVoiceMenu(); });
+document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !$("#folder-voice-menu").hidden) closeFolderVoiceMenu(true); });
 $("#folder-select").addEventListener("change", (event) => { selectedFolderId = event.target.value; rememberFolder(); });
 $("#affirmation-list").addEventListener("click", (event) => { const play = event.target.closest("[data-play-id]"); const move = event.target.closest("[data-move-id]"); if (play) return toggleAffirmationPlayback(play.dataset.playId); if (move) moveAffirmation(move.dataset.moveId, Number(move.dataset.direction)); });
 $("#affirmation-list").addEventListener("dragstart", (event) => { const handle = event.target.closest("[data-drag-id]"); if (!handle || orderSaving) return event.preventDefault(); draggedAffirmationId = handle.dataset.dragId; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", draggedAffirmationId); handle.closest(".affirmation-card")?.classList.add("dragging"); });
