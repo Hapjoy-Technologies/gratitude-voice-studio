@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Newsreader:opsz,wght@6..72,500;6..72,600&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=voice-menu-1">
+  <link rel="stylesheet" href="./styles.css?v=voice-menu-2">
 </head>
 <body>
   <div class="ambient-shape shape-one" aria-hidden="true"></div>
@@ -101,13 +101,12 @@
                     <div class="folder-voice-menu-heading">Available voices</div>
                     <div class="folder-voice-options" id="folder-voice-options" role="listbox" aria-label="Voice version"></div>
                     <div class="folder-voice-menu-divider"></div>
-                    <button class="folder-voice-remove" id="delete-folder-voice" type="button"><span aria-hidden="true">×</span> Remove selected voice</button>
+                    <button class="folder-voice-add" id="add-folder-voice" type="button"><span aria-hidden="true">＋</span> Add another voice</button>
                   </div>
                 </div>
                 <button class="secondary-button compact music-button" id="background-music" type="button" disabled><span aria-hidden="true">♫</span> <span id="background-music-label">Music</span></button>
                 <button class="secondary-button compact" id="play-all" type="button" disabled><span aria-hidden="true">▶</span> Play all</button>
                 <button class="secondary-button compact save-order-button" id="save-order" type="button" hidden>Save changes to AWS</button>
-                <button class="secondary-button compact voice-version-button" id="add-folder-voice" type="button" disabled><span class="button-icon" aria-hidden="true">＋</span> Add another voice</button>
                 <button class="primary-button compact" id="add-to-folder" type="button" disabled>Add affirmation <span aria-hidden="true">＋</span></button>
               </div>
             </div>
@@ -358,6 +357,6 @@
     </form>
   </dialog>
 
-  <script src="./app.js?v=voice-menu-1"></script>
+  <script src="./app.js?v=voice-menu-2"></script>
 </body>
 </html>

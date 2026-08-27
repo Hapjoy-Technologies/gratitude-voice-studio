@@ -800,16 +800,8 @@ function renderFolderVoicePicker() {
   const options = $("#folder-voice-options");
   const avatar = $("#folder-voice-avatar");
   const name = $("#folder-voice-name");
-  const deleteButton = $("#delete-folder-voice");
   const complete = completeFolderVoices();
   picker.hidden = !affirmations.length || !complete.length;
-  deleteButton.disabled = !AWS_CONFIGURED || complete.length < 2 || folderVoiceDeleteBusy;
-  deleteButton.innerHTML = folderVoiceDeleteBusy
-    ? '<span aria-hidden="true">…</span> Removing voice…'
-    : '<span aria-hidden="true">×</span> Remove selected voice';
-  deleteButton.title = complete.length < 2
-    ? "Add another complete voice before removing this one"
-    : "Remove the selected voice from this folder";
   if (!complete.length) {
     options.innerHTML = "";
     avatar.innerHTML = "";
@@ -828,11 +820,15 @@ function renderFolderVoicePicker() {
   trigger.setAttribute("aria-label", `Voice: ${selected.name}`);
   options.innerHTML = complete.map((voice) => {
     const isSelected = voice.id === selected.id;
+    const removeDisabled = !AWS_CONFIGURED || complete.length < 2 || folderVoiceDeleteBusy;
+    const removeTitle = complete.length < 2
+      ? "Add another complete voice before removing this one"
+      : `Remove ${voice.name} from this folder`;
     const image = voiceImageUrl(voice.id);
     const portrait = image
       ? `<img src="${escapeHtml(image)}" alt="">`
       : escapeHtml(voice.name.slice(0, 1).toUpperCase());
-    return `<button class="folder-voice-option${isSelected ? " selected" : ""}" data-folder-voice-option="${escapeHtml(voice.id)}" type="button" role="option" aria-selected="${isSelected}"><span class="folder-voice-option-avatar" aria-hidden="true">${portrait}</span><span class="folder-voice-option-copy"><strong>${escapeHtml(voice.name)}</strong><small>${voice.count} recording${voice.count === 1 ? "" : "s"}</small></span><span class="folder-voice-option-check" aria-hidden="true">✓</span></button>`;
+    return `<div class="folder-voice-option-row${isSelected ? " selected" : ""}"><button class="folder-voice-inline-remove" data-folder-voice-remove="${escapeHtml(voice.id)}" type="button" aria-label="Remove ${escapeHtml(voice.name)}" title="${escapeHtml(removeTitle)}"${removeDisabled ? " disabled" : ""}>×</button><button class="folder-voice-option${isSelected ? " selected" : ""}" data-folder-voice-option="${escapeHtml(voice.id)}" type="button" role="option" aria-selected="${isSelected}"><span class="folder-voice-option-avatar" aria-hidden="true">${portrait}</span><span class="folder-voice-option-copy"><strong>${escapeHtml(voice.name)}</strong><small>${voice.count} recording${voice.count === 1 ? "" : "s"}</small></span><span class="folder-voice-option-check" aria-hidden="true">✓</span></button></div>`;
   }).join("");
 }
 
@@ -1574,9 +1570,15 @@ $("#music-list").addEventListener("click", (event) => {
 });
 $("#music-upload-form").addEventListener("submit", uploadBackgroundMusic);
 $("#save-order").addEventListener("click", saveAffirmationOrder);
-$("#add-folder-voice").addEventListener("click", openFolderVoiceDialog);
+$("#add-folder-voice").addEventListener("click", () => { closeFolderVoiceMenu(); openFolderVoiceDialog(); });
 $("#folder-voice-trigger").addEventListener("click", (event) => { event.stopPropagation(); toggleFolderVoiceMenu(); });
 $("#folder-voice-options").addEventListener("click", (event) => {
+  const remove = event.target.closest("[data-folder-voice-remove]");
+  if (remove) {
+    selectFolderVoice(remove.dataset.folderVoiceRemove);
+    openDeleteFolderVoiceDialog();
+    return;
+  }
   const option = event.target.closest("[data-folder-voice-option]");
   if (option) selectFolderVoice(option.dataset.folderVoiceOption);
 });
@@ -1593,7 +1595,6 @@ $("#folder-voice-options").addEventListener("keydown", (event) => {
       : (current + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
   options[next].focus();
 });
-$("#delete-folder-voice").addEventListener("click", () => { closeFolderVoiceMenu(); openDeleteFolderVoiceDialog(); });
 document.addEventListener("click", (event) => { if (!event.target.closest("#folder-voice-picker")) closeFolderVoiceMenu(); });
 document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !$("#folder-voice-menu").hidden) closeFolderVoiceMenu(true); });
 $("#folder-select").addEventListener("change", (event) => { selectedFolderId = event.target.value; rememberFolder(); });
