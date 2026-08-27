@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Newsreader:opsz,wght@6..72,500;6..72,600&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=background-music-1">
+  <link rel="stylesheet" href="./styles.css?v=background-music-2">
 </head>
 <body>
   <div class="ambient-shape shape-one" aria-hidden="true"></div>
@@ -297,18 +297,27 @@
 
       <form class="music-upload-panel" id="music-upload-form">
         <div class="music-upload-heading">
-          <span><strong>Add music</strong><small>Upload an MP3 to the shared AWS music library.</small></span>
-          <span class="storage-mode">Saved in AWS</span>
+          <span class="music-upload-icon" aria-hidden="true">♫</span>
+          <span class="music-upload-copy"><strong>Add your own music</strong><small>Upload an MP3 to the shared music library.</small></span>
+          <span class="music-cloud-status"><i aria-hidden="true">✓</i> Saved in AWS</span>
         </div>
         <div class="field-row">
           <label class="field"><span class="input-label">Track name</span><input id="music-name" maxlength="80" required placeholder="Example: Quiet morning"></label>
           <label class="field"><span class="input-label">Artist (optional)</span><input id="music-artist" maxlength="80" placeholder="Example: Atlas Audio"></label>
         </div>
-        <label class="field"><span class="input-label">MP3 file</span><input id="music-file" type="file" required accept="audio/mpeg,.mp3"></label>
+        <label class="field music-file-field">
+          <span class="input-label">MP3 file</span>
+          <span class="music-file-picker">
+            <span class="music-file-icon" aria-hidden="true">♪</span>
+            <span class="music-file-copy"><strong id="music-file-name">Choose an MP3 file</strong><small>Maximum file size: 30 MB</small></span>
+            <span class="music-file-browse">Browse</span>
+            <input id="music-file" type="file" required accept="audio/mpeg,.mp3">
+          </span>
+        </label>
         <p class="form-error" id="music-error" role="alert"></p>
         <div class="music-upload-actions">
           <span id="music-upload-status" role="status" aria-live="polite"></span>
-          <button class="primary-button compact" id="add-music-button" type="submit">Add music to AWS</button>
+          <button class="primary-button compact" id="add-music-button" type="submit"><span aria-hidden="true">＋</span> Add music</button>
         </div>
       </form>
 
@@ -342,6 +351,6 @@
     </form>
   </dialog>
 
-  <script src="./app.js?v=background-music-1"></script>
+  <script src="./app.js?v=background-music-2"></script>
 </body>
 </html>

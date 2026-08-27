@@ -479,6 +479,7 @@ async function uploadBackgroundMusic(event) {
     selectedBackgroundMusicId = saved.track.id;
     rememberBackgroundMusicPreference();
     event.target.reset();
+    $("#music-file-name").textContent = "Choose an MP3 file";
     $("#music-upload-status").textContent = name + " was saved in AWS.";
   } catch (error) {
     $("#music-error").textContent = error.message || "Could not add this music.";
@@ -486,7 +487,7 @@ async function uploadBackgroundMusic(event) {
   } finally {
     musicUploadBusy = false;
     button.disabled = false;
-    button.textContent = "Add music to AWS";
+    button.innerHTML = '<span aria-hidden="true">＋</span> Add music';
     renderBackgroundMusicButton();
     renderBackgroundMusicDialog();
   }
@@ -1517,6 +1518,10 @@ $("#add-to-folder").addEventListener("click", () => { if (!selectedFolderId) ret
 $("#play-all").addEventListener("click", togglePlayAll);
 $("#background-music").addEventListener("click", openBackgroundMusicDialog);
 $("#music-volume").addEventListener("input", (event) => updateBackgroundMusicVolume(event.target.value));
+$("#music-file").addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  $("#music-file-name").textContent = file?.name || "Choose an MP3 file";
+});
 $("#music-list").addEventListener("change", (event) => {
   const choice = event.target.closest("[data-music-select]");
   if (choice) selectBackgroundMusic(choice.value);
