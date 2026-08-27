@@ -4,6 +4,9 @@ const AWS_API_BASE_URL = "https://a6c42ttu3mqldnamijycyue27m0jgbae.lambda-url.us
 const AWS_CONFIGURED = !AWS_API_BASE_URL.startsWith("__");
 const LOCAL_FOLDER_STORAGE_KEY = "gratitude-voice-studio-folders-v1";
 const FOLDER_VOICE_STORAGE_KEY = "gratitude-voice-studio-folder-voices-v1";
+const BACKGROUND_MUSIC_STORAGE_KEY = "gratitude-voice-studio-background-music-v1";
+const DEFAULT_BACKGROUND_MUSIC_VOLUME = 0.18;
+const MAX_BACKGROUND_MUSIC_BYTES = 30 * 1024 * 1024;
 const VOICE_DISPLAY_NAMES = {
   alice: "Amelia",
   "mélanie": "Elena",
@@ -59,6 +62,15 @@ let batchAudio = null;
 let batchAudioUrl = null;
 let activeBatchButton = null;
 let activeBatchStatus = null;
+let backgroundMusicTracks = [];
+let selectedBackgroundMusicId = null;
+let backgroundMusicVolume = DEFAULT_BACKGROUND_MUSIC_VOLUME;
+let backgroundMusicAudio = null;
+let backgroundMusicAudioId = null;
+let musicPreviewAudio = null;
+let activeMusicPreviewId = null;
+let musicUploadBusy = false;
+let musicDeleteBusyId = null;
 
 function loadLocalFolders() {
   try {
@@ -87,6 +99,42 @@ function rememberFolderVoice(voiceId = selectedFolderVoiceId) {
   const preferences = loadFolderVoicePreferences();
   preferences[selectedFolderId] = voiceId;
   localStorage.setItem(FOLDER_VOICE_STORAGE_KEY, JSON.stringify(preferences));
+}
+
+function loadBackgroundMusicPreferences() {
+  try {
+    const value = JSON.parse(localStorage.getItem(BACKGROUND_MUSIC_STORAGE_KEY) || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function restoreBackgroundMusicPreference() {
+  const preference = loadBackgroundMusicPreferences()[selectedFolderId] || {};
+  selectedBackgroundMusicId = preference.musicId || null;
+  const volume = Number(preference.volume);
+  backgroundMusicVolume = Number.isFinite(volume) && volume >= 0 && volume <= 1
+    ? volume
+    : DEFAULT_BACKGROUND_MUSIC_VOLUME;
+}
+
+function rememberBackgroundMusicPreference() {
+  if (!selectedFolderId) return;
+  const preferences = loadBackgroundMusicPreferences();
+  preferences[selectedFolderId] = {
+    musicId: selectedBackgroundMusicId,
+    volume: backgroundMusicVolume,
+  };
+  localStorage.setItem(BACKGROUND_MUSIC_STORAGE_KEY, JSON.stringify(preferences));
+}
+
+function removeMusicFromPreferences(musicId) {
+  const preferences = loadBackgroundMusicPreferences();
+  Object.keys(preferences).forEach((folderId) => {
+    if (preferences[folderId]?.musicId === musicId) preferences[folderId].musicId = null;
+  });
+  localStorage.setItem(BACKGROUND_MUSIC_STORAGE_KEY, JSON.stringify(preferences));
 }
 
 function itemVoiceVersions(item) {
@@ -204,6 +252,283 @@ async function awsApi(path, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 
+function formatMusicDuration(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  if (!total) return "";
+  return Math.floor(total / 60) + ":" + String(total % 60).padStart(2, "0");
+}
+
+function selectedBackgroundMusicTrack() {
+  return backgroundMusicTracks.find((track) => track.id === selectedBackgroundMusicId) || null;
+}
+
+async function loadBackgroundMusic() {
+  if (!AWS_CONFIGURED) {
+    backgroundMusicTracks = [];
+    renderBackgroundMusicButton();
+    renderBackgroundMusicDialog();
+    return;
+  }
+  try {
+    const payload = await awsApi("/background-music", {cache: "no-store"});
+    backgroundMusicTracks = (payload.tracks || []).filter((track) => track.status === "active" && track.audioUrl);
+    if (selectedBackgroundMusicId && !selectedBackgroundMusicTrack()) {
+      selectedBackgroundMusicId = null;
+      rememberBackgroundMusicPreference();
+    }
+    renderBackgroundMusicButton();
+    renderBackgroundMusicDialog();
+  } catch (error) {
+    backgroundMusicTracks = [];
+    renderBackgroundMusicButton();
+    if ($("#music-dialog")?.open) {
+      $("#music-error").textContent = error.message || "Could not load music from AWS.";
+      renderBackgroundMusicDialog();
+    }
+  }
+}
+
+function renderBackgroundMusicButton() {
+  const button = $("#background-music");
+  if (!button) return;
+  const track = selectedBackgroundMusicTrack();
+  button.disabled = !AWS_CONFIGURED || !selectedFolderId;
+  button.classList.toggle("active", Boolean(track));
+  $("#background-music-label").textContent = track?.name || "Music";
+  button.title = track ? "Background music: " + track.name : "Choose background music";
+}
+
+function renderBackgroundMusicDialog() {
+  const list = $("#music-list");
+  if (!list) return;
+  const volumePercent = Math.round(backgroundMusicVolume * 100);
+  $("#music-volume").value = String(volumePercent);
+  $("#music-volume-value").textContent = volumePercent + "%";
+
+  const noneOption = '<div class="music-option' + (selectedBackgroundMusicId ? '' : ' selected') + '"><label class="music-choice"><input type="radio" name="background-music-choice" data-music-select value=""' + (selectedBackgroundMusicId ? '' : ' checked') + '><span class="music-art" aria-hidden="true">∅</span><span class="music-copy"><strong>No background music</strong><small>Play the affirmation voice by itself</small></span></label></div>';
+  const trackOptions = backgroundMusicTracks.map((track) => {
+    const selected = track.id === selectedBackgroundMusicId;
+    const previewing = track.id === activeMusicPreviewId && musicPreviewAudio && !musicPreviewAudio.paused;
+    const details = [track.artist, formatMusicDuration(track.durationSeconds)].filter(Boolean).join(" · ") || "Saved in AWS";
+    const busy = musicUploadBusy || Boolean(musicDeleteBusyId);
+    return '<div class="music-option' + (selected ? ' selected' : '') + '"><label class="music-choice"><input type="radio" name="background-music-choice" data-music-select value="' + escapeHtml(track.id) + '"' + (selected ? ' checked' : '') + '><span class="music-art" aria-hidden="true">♫</span><span class="music-copy"><strong>' + escapeHtml(track.name) + '</strong><small>' + escapeHtml(details) + '</small></span></label><span class="music-track-actions"><button class="' + (previewing ? 'playing' : '') + '" data-music-preview="' + escapeHtml(track.id) + '" type="button"' + (busy ? ' disabled' : '') + '>' + (previewing ? '■ Stop' : '▶ Preview') + '</button><button class="remove-music" data-music-delete="' + escapeHtml(track.id) + '" type="button"' + (busy ? ' disabled' : '') + '>Remove</button></span></div>';
+  }).join("");
+  list.innerHTML = noneOption + trackOptions;
+}
+
+function stopMusicPreview(render = true) {
+  if (musicPreviewAudio) {
+    musicPreviewAudio.onended = null;
+    musicPreviewAudio.onerror = null;
+    musicPreviewAudio.pause();
+    musicPreviewAudio.currentTime = 0;
+  }
+  musicPreviewAudio = null;
+  activeMusicPreviewId = null;
+  if (render) renderBackgroundMusicDialog();
+}
+
+function releaseBackgroundMusic() {
+  if (backgroundMusicAudio) {
+    backgroundMusicAudio.onerror = null;
+    backgroundMusicAudio.pause();
+    backgroundMusicAudio.currentTime = 0;
+  }
+  backgroundMusicAudio = null;
+  backgroundMusicAudioId = null;
+}
+
+async function startBackgroundMusic() {
+  const track = selectedBackgroundMusicTrack();
+  if (!track?.audioUrl) return false;
+  stopMusicPreview(false);
+  if (backgroundMusicAudio && backgroundMusicAudioId === track.id) {
+    backgroundMusicAudio.volume = backgroundMusicVolume;
+    if (backgroundMusicAudio.paused) await backgroundMusicAudio.play();
+    return true;
+  }
+  releaseBackgroundMusic();
+  backgroundMusicAudio = new Audio(track.audioUrl);
+  backgroundMusicAudioId = track.id;
+  backgroundMusicAudio.loop = true;
+  backgroundMusicAudio.volume = backgroundMusicVolume;
+  backgroundMusicAudio.onerror = () => {
+    releaseBackgroundMusic();
+    $("#library-status").textContent = "The affirmation is playing, but the selected background music could not be loaded.";
+  };
+  await backgroundMusicAudio.play();
+  return true;
+}
+
+async function toggleMusicPreview(musicId) {
+  const track = backgroundMusicTracks.find((item) => item.id === musicId);
+  if (!track?.audioUrl) return;
+  if (activeMusicPreviewId === musicId && musicPreviewAudio && !musicPreviewAudio.paused) {
+    stopMusicPreview();
+    return;
+  }
+  stopLibraryPlayback(false);
+  stopMusicPreview(false);
+  activeMusicPreviewId = musicId;
+  musicPreviewAudio = new Audio(track.audioUrl);
+  musicPreviewAudio.volume = backgroundMusicVolume;
+  musicPreviewAudio.onended = () => stopMusicPreview();
+  musicPreviewAudio.onerror = () => {
+    stopMusicPreview();
+    $("#music-error").textContent = "This music track could not be previewed.";
+  };
+  try {
+    await musicPreviewAudio.play();
+    renderBackgroundMusicDialog();
+  } catch (_) {
+    stopMusicPreview();
+    $("#music-error").textContent = "Music playback was blocked. Click Preview again.";
+  }
+}
+
+function selectBackgroundMusic(musicId) {
+  selectedBackgroundMusicId = musicId || null;
+  rememberBackgroundMusicPreference();
+  renderBackgroundMusicButton();
+  renderBackgroundMusicDialog();
+  if (!libraryAudio || libraryAudio.paused) {
+    releaseBackgroundMusic();
+    return;
+  }
+  releaseBackgroundMusic();
+  startBackgroundMusic().catch(() => {
+    $("#library-status").textContent = "The affirmation is playing, but the selected background music could not be started.";
+  });
+}
+
+function updateBackgroundMusicVolume(value) {
+  backgroundMusicVolume = Math.min(1, Math.max(0, Number(value) / 100));
+  if (backgroundMusicAudio) backgroundMusicAudio.volume = backgroundMusicVolume;
+  if (musicPreviewAudio) musicPreviewAudio.volume = backgroundMusicVolume;
+  rememberBackgroundMusicPreference();
+  $("#music-volume-value").textContent = Math.round(backgroundMusicVolume * 100) + "%";
+}
+
+function readMusicDuration(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const audio = new Audio();
+    const finish = (value, error) => {
+      URL.revokeObjectURL(url);
+      audio.removeAttribute("src");
+      error ? reject(error) : resolve(value);
+    };
+    audio.preload = "metadata";
+    audio.onloadedmetadata = () => Number.isFinite(audio.duration)
+      ? finish(audio.duration)
+      : finish(null, new Error("Could not read this MP3 duration."));
+    audio.onerror = () => finish(null, new Error("Choose a valid MP3 file."));
+    audio.src = url;
+  });
+}
+
+async function uploadBackgroundMusic(event) {
+  event.preventDefault();
+  if (musicUploadBusy) return;
+  const file = $("#music-file").files[0];
+  const name = $("#music-name").value.trim();
+  const artist = $("#music-artist").value.trim();
+  $("#music-error").textContent = "";
+  $("#music-upload-status").textContent = "";
+  if (!file || !name) return;
+  if (!file.name.toLowerCase().endsWith(".mp3")) {
+    $("#music-error").textContent = "Choose an MP3 file.";
+    return;
+  }
+  if (file.size > MAX_BACKGROUND_MUSIC_BYTES) {
+    $("#music-error").textContent = "Music must be 30 MB or smaller.";
+    return;
+  }
+
+  const button = $("#add-music-button");
+  musicUploadBusy = true;
+  button.disabled = true;
+  button.textContent = "Uploading…";
+  $("#music-upload-status").textContent = "Reading MP3…";
+  renderBackgroundMusicDialog();
+  try {
+    const durationSeconds = await readMusicDuration(file);
+    const upload = await awsApi("/background-music/uploads/presign", {
+      method: "POST",
+      body: JSON.stringify({name, artist, fileSize: file.size}),
+    });
+    $("#music-upload-status").textContent = "Uploading to AWS…";
+    const uploaded = await fetch(upload.uploadUrl, {
+      method: "PUT",
+      headers: upload.requiredHeaders,
+      body: file,
+    });
+    if (!uploaded.ok) throw new Error("AWS upload failed (" + uploaded.status + ").");
+    $("#music-upload-status").textContent = "Saving music record…";
+    const saved = await awsApi("/background-music/confirm", {
+      method: "POST",
+      body: JSON.stringify({
+        musicId: upload.musicId,
+        audioKey: upload.audioKey,
+        name,
+        artist,
+        durationSeconds,
+      }),
+    });
+    await loadBackgroundMusic();
+    selectedBackgroundMusicId = saved.track.id;
+    rememberBackgroundMusicPreference();
+    event.target.reset();
+    $("#music-upload-status").textContent = name + " was saved in AWS.";
+  } catch (error) {
+    $("#music-error").textContent = error.message || "Could not add this music.";
+    $("#music-upload-status").textContent = "";
+  } finally {
+    musicUploadBusy = false;
+    button.disabled = false;
+    button.textContent = "Add music to AWS";
+    renderBackgroundMusicButton();
+    renderBackgroundMusicDialog();
+  }
+}
+
+async function deleteBackgroundMusic(musicId) {
+  const track = backgroundMusicTracks.find((item) => item.id === musicId);
+  if (!track || musicDeleteBusyId) return;
+  if (!confirm("Remove “" + track.name + "” from the shared AWS music library?")) return;
+  musicDeleteBusyId = musicId;
+  $("#music-error").textContent = "";
+  $("#music-upload-status").textContent = "Removing " + track.name + " from AWS…";
+  if (activeMusicPreviewId === musicId) stopMusicPreview(false);
+  if (selectedBackgroundMusicId === musicId) releaseBackgroundMusic();
+  renderBackgroundMusicDialog();
+  try {
+    await awsApi("/background-music/" + encodeURIComponent(musicId), {method: "DELETE"});
+    backgroundMusicTracks = backgroundMusicTracks.filter((item) => item.id !== musicId);
+    removeMusicFromPreferences(musicId);
+    if (selectedBackgroundMusicId === musicId) selectedBackgroundMusicId = null;
+    $("#music-upload-status").textContent = track.name + " was removed from AWS.";
+  } catch (error) {
+    $("#music-error").textContent = error.message || "Could not remove this music.";
+    $("#music-upload-status").textContent = "";
+  } finally {
+    musicDeleteBusyId = null;
+    renderBackgroundMusicButton();
+    renderBackgroundMusicDialog();
+  }
+}
+
+async function openBackgroundMusicDialog() {
+  if (!selectedFolderId || !AWS_CONFIGURED) return;
+  restoreBackgroundMusicPreference();
+  $("#music-error").textContent = "";
+  $("#music-upload-status").textContent = "Loading music from AWS…";
+  renderBackgroundMusicDialog();
+  $("#music-dialog").showModal();
+  await loadBackgroundMusic();
+  $("#music-upload-status").textContent = "";
+}
+
 function rememberFolder() {
   if (selectedFolderId) localStorage.setItem("gratitude-voice-selected-folder", selectedFolderId);
   else localStorage.removeItem("gratitude-voice-selected-folder");
@@ -214,7 +539,10 @@ async function showApp() {
   $("#app-shell").hidden = false;
   $("#storage-mode").textContent = AWS_CONFIGURED ? "Shared AWS library" : "Browser draft";
   renderFolders();
-  await Promise.all([loadVoices(), refreshFolders()]);
+  await Promise.all([loadVoices(), refreshFolders(), loadBackgroundMusic()]);
+  restoreBackgroundMusicPreference();
+  renderBackgroundMusicButton();
+  renderBackgroundMusicDialog();
 }
 
 function showView(name) {
@@ -251,6 +579,7 @@ async function refreshFolders(preferredId = selectedFolderId) {
   if (!AWS_CONFIGURED) {
     folders = loadLocalFolders();
     selectedFolderId = folders.some((folder) => folder.id === preferredId) ? preferredId : folders[0]?.id || null;
+    restoreBackgroundMusicPreference();
     rememberFolder();
     renderFolders();
     return refreshAffirmations();
@@ -259,6 +588,7 @@ async function refreshFolders(preferredId = selectedFolderId) {
     const payload = await awsApi("/folders", {cache: "no-store"});
     folders = payload.folders || [];
     selectedFolderId = folders.some((folder) => folder.id === preferredId) ? preferredId : folders[0]?.id || null;
+    restoreBackgroundMusicPreference();
     rememberFolder();
     renderFolders();
     await refreshAffirmations();
@@ -304,6 +634,7 @@ function releaseLibraryAudio() {
 
 function stopLibraryPlayback(render = true) {
   releaseLibraryAudio();
+  releaseBackgroundMusic();
   activeAffirmationId = null;
   isPlayingAll = false;
   playlistIndex = 0;
@@ -332,8 +663,13 @@ async function playLibraryItem(item) {
   $("#library-status").textContent = isPlayingAll
     ? `Playing ${playlistIndex + 1} of ${affirmations.length}`
     : `Playing ${voice.voiceName}`;
+  const musicPlayback = startBackgroundMusic().catch(() => false);
   try {
     await libraryAudio.play();
+    const musicStarted = await musicPlayback;
+    if (selectedBackgroundMusicTrack() && !musicStarted) {
+      $("#library-status").textContent += " · background music unavailable";
+    }
     renderAffirmations();
   } catch (_) {
     stopLibraryPlayback();
@@ -554,6 +890,7 @@ function renderAffirmations(loading = false, error = "") {
   $("#save-order").hidden = !orderChanged;
   $("#save-order").disabled = orderSaving;
   $("#save-order").textContent = orderSaving ? "Saving…" : "Save changes to AWS";
+  renderBackgroundMusicButton();
   renderFolderVoicePicker();
   const list = $("#affirmation-list");
   if (error) return showLibraryError(error);
@@ -1172,12 +1509,25 @@ async function playBatchPreview(affirmationId, button) {
 $("#login-form").addEventListener("submit", verifyLogin);
 $("#sign-out").addEventListener("click", () => { sessionStorage.removeItem("gratitude-voice-access"); location.reload(); });
 $$('[data-view], [data-view-link]').forEach((element) => element.addEventListener("click", (event) => { event.preventDefault(); showView(element.dataset.view || element.dataset.viewLink); }));
-$("#folder-list").addEventListener("click", async (event) => { const button = event.target.closest("[data-folder]"); if (!button) return; stopLibraryPlayback(false); orderChanged = false; selectedFolderId = button.dataset.folder; selectedFolderVoiceId = loadFolderVoicePreferences()[selectedFolderId] || null; rememberFolder(); renderFolders(); await refreshAffirmations(); });
+$("#folder-list").addEventListener("click", async (event) => { const button = event.target.closest("[data-folder]"); if (!button) return; stopLibraryPlayback(false); orderChanged = false; selectedFolderId = button.dataset.folder; selectedFolderVoiceId = loadFolderVoicePreferences()[selectedFolderId] || null; restoreBackgroundMusicPreference(); rememberFolder(); renderFolders(); await refreshAffirmations(); });
 $("#new-folder").addEventListener("click", () => $("#folder-dialog").showModal());
 $("#folder-form").addEventListener("submit", async (event) => { event.preventDefault(); const button = event.submitter; button.disabled = true; $("#folder-error").textContent = ""; try { await createFolder($("#folder-name").value); event.target.reset(); $("#folder-dialog").close(); } catch (error) { $("#folder-error").textContent = error.message; } finally { button.disabled = false; } });
 $("#new-affirmation").addEventListener("click", () => { if (!folders.length) return $("#folder-dialog").showModal(); showView("generate"); });
 $("#add-to-folder").addEventListener("click", () => { if (!selectedFolderId) return; showView("generate"); });
 $("#play-all").addEventListener("click", togglePlayAll);
+$("#background-music").addEventListener("click", openBackgroundMusicDialog);
+$("#music-volume").addEventListener("input", (event) => updateBackgroundMusicVolume(event.target.value));
+$("#music-list").addEventListener("change", (event) => {
+  const choice = event.target.closest("[data-music-select]");
+  if (choice) selectBackgroundMusic(choice.value);
+});
+$("#music-list").addEventListener("click", (event) => {
+  const preview = event.target.closest("[data-music-preview]");
+  const remove = event.target.closest("[data-music-delete]");
+  if (preview) return toggleMusicPreview(preview.dataset.musicPreview);
+  if (remove) return deleteBackgroundMusic(remove.dataset.musicDelete);
+});
+$("#music-upload-form").addEventListener("submit", uploadBackgroundMusic);
 $("#save-order").addEventListener("click", saveAffirmationOrder);
 $("#add-folder-voice").addEventListener("click", openFolderVoiceDialog);
 $("#delete-folder-voice").addEventListener("click", openDeleteFolderVoiceDialog);
@@ -1210,6 +1560,10 @@ $$('[data-close-dialog]').forEach((button) => button.addEventListener("click", (
     clearFolderVoiceBatch();
   }
   if (dialog.id === "delete-folder-voice-dialog" && folderVoiceDeleteBusy) return;
+  if (dialog.id === "music-dialog") {
+    if (musicUploadBusy || musicDeleteBusyId) return;
+    stopMusicPreview(false);
+  }
   dialog.close();
 }));
 $("#folder-voice-dialog").addEventListener("cancel", (event) => {
@@ -1218,6 +1572,10 @@ $("#folder-voice-dialog").addEventListener("cancel", (event) => {
 });
 $("#delete-folder-voice-dialog").addEventListener("cancel", (event) => {
   if (folderVoiceDeleteBusy) event.preventDefault();
+});
+$("#music-dialog").addEventListener("cancel", (event) => {
+  if (musicUploadBusy || musicDeleteBusyId) return event.preventDefault();
+  stopMusicPreview(false);
 });
 
 updateSettings();

@@ -116,6 +116,8 @@ nav { display: flex; align-items: center; gap: 3px; padding: 4px; border: 1px so
 .delete-folder-voice-button { color: var(--danger); border-color: rgba(166, 70, 70, .28); background: #fbf0ef; }
 .delete-folder-voice-button:hover:not(:disabled) { color: #fff; border-color: var(--danger); background: var(--danger); }
 .delete-folder-voice-button:disabled { opacity: .42; cursor: not-allowed; }
+.music-button.active { color: var(--plum-deep); border-color: rgba(104, 76, 114, .34); background: var(--surface-tint); }
+.music-button.active > span:first-child { animation: music-note-pulse 1.8s ease-in-out infinite; }
 .library-status { min-height: 0; color: var(--muted); font-size: 10px; }
 .library-status:not(:empty) { padding-top: 12px; }
 .affirmation-list { display: grid; gap: 10px; padding-top: 18px; }
@@ -249,6 +251,37 @@ dialog::backdrop { background: rgba(45, 39, 48, .22); backdrop-filter: blur(6px)
 .voice-version-note strong { color: var(--success); font-size: 10px; }
 .note-check { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--success); font-size: 11px; font-weight: 800; }
 .folder-voice-primary { min-width: 220px; justify-content: space-between; }
+.music-dialog-card { max-height: min(850px, calc(100vh - 40px)); overflow-y: auto; }
+.music-volume-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 5px 14px; padding: 13px 15px; border: 1px solid rgba(104, 76, 114, .18); border-radius: 15px; background: var(--surface-tint); }
+.music-volume-card > span { display: grid; gap: 2px; }
+.music-volume-card strong { font-size: 11px; }
+.music-volume-card small { color: var(--muted); font-size: 9px; }
+.music-volume-card output { color: var(--plum); font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.music-volume-card input { grid-column: 1 / -1; min-height: 6px; padding: 0; accent-color: var(--plum); }
+.music-list { display: grid; gap: 8px; }
+.music-option { min-height: 64px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 15px; background: rgba(255, 253, 250, .72); transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }
+.music-option.selected { border-color: rgba(104, 76, 114, .52); background: var(--surface-tint); box-shadow: 0 0 0 2px rgba(104, 76, 114, .06); }
+.music-choice { min-width: 0; display: grid; grid-template-columns: 20px 38px minmax(0, 1fr); align-items: center; gap: 10px; cursor: pointer; }
+.music-choice input { width: 16px; min-height: 16px; margin: 0; accent-color: var(--plum); }
+.music-art { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; color: var(--plum-deep); background: linear-gradient(145deg, #eee4ef, #ddd1e1); font-family: var(--serif); font-size: 17px; }
+.music-option.selected .music-art { color: #fff; background: var(--plum); }
+.music-copy { min-width: 0; display: grid; gap: 3px; }
+.music-copy strong, .music-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.music-copy strong { font-size: 11px; }
+.music-copy small { color: var(--muted); font-size: 9px; }
+.music-track-actions { display: flex; align-items: center; gap: 5px; }
+.music-track-actions button { min-height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--plum); background: var(--surface); font-size: 9px; font-weight: 700; }
+.music-track-actions button:hover:not(:disabled), .music-track-actions button.playing { color: #fff; border-color: var(--plum); background: var(--plum); }
+.music-track-actions .remove-music { color: var(--danger); }
+.music-track-actions .remove-music:hover:not(:disabled) { border-color: var(--danger); background: var(--danger); }
+.music-track-actions button:disabled { opacity: .42; cursor: not-allowed; }
+.music-upload-panel { display: grid; gap: 12px; padding: 15px; border: 1px solid var(--line); border-radius: 16px; background: rgba(241, 238, 232, .5); }
+.music-upload-heading, .music-upload-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.music-upload-heading > span:first-child { display: grid; gap: 2px; }
+.music-upload-heading strong { font-family: var(--serif); font-size: 17px; font-weight: 500; }
+.music-upload-heading small, .music-upload-actions > span { color: var(--muted); font-size: 9px; }
+.music-upload-actions > span { min-height: 14px; }
+@keyframes music-note-pulse { 50% { transform: translateY(-2px) scale(1.08); } }
 .batch-panel { display: grid; gap: 11px; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: rgba(241, 238, 232, .5); }
 .batch-progress-copy { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .batch-progress-copy > div { display: grid; gap: 3px; }
@@ -318,6 +351,10 @@ dialog::backdrop { background: rgba(45, 39, 48, .22); backdrop-filter: blur(6px)
   .voice-preview-button, .folder-voice-primary { width: 100%; }
   .selected-voice-summary { grid-template-columns: 40px minmax(0, 1fr); }
   .recording-count { grid-column: 2; justify-self: start; }
+  .music-option { grid-template-columns: 1fr; }
+  .music-track-actions { padding-left: 30px; }
+  .music-upload-actions { align-items: stretch; flex-direction: column; }
+  .music-upload-actions .primary-button { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

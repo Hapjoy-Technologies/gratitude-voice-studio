@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Newsreader:opsz,wght@6..72,500;6..72,600&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=voice-portraits-2">
+  <link rel="stylesheet" href="./styles.css?v=background-music-1">
 </head>
 <body>
   <div class="ambient-shape shape-one" aria-hidden="true"></div>
@@ -96,6 +96,7 @@
                   <span class="folder-voice-avatar" id="folder-voice-avatar" hidden></span>
                   <select id="folder-voice-select" aria-label="Voice version"></select>
                 </label>
+                <button class="secondary-button compact music-button" id="background-music" type="button" disabled><span aria-hidden="true">♫</span> <span id="background-music-label">Music</span></button>
                 <button class="secondary-button compact delete-folder-voice-button" id="delete-folder-voice" type="button" hidden><span aria-hidden="true">×</span> Delete voice</button>
                 <button class="secondary-button compact" id="play-all" type="button" disabled><span aria-hidden="true">▶</span> Play all</button>
                 <button class="secondary-button compact save-order-button" id="save-order" type="button" hidden>Save changes to AWS</button>
@@ -275,6 +276,46 @@
     </form>
   </dialog>
 
+  <dialog class="wide-dialog" id="music-dialog">
+    <div class="dialog-card music-dialog-card">
+      <div class="dialog-heading">
+        <div>
+          <span class="eyebrow">Affirmation playback</span>
+          <h3>Background music</h3>
+        </div>
+        <button class="icon-button" data-close-dialog type="button" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy">Choose a track to play quietly underneath the selected affirmation voice. Your choice and volume are remembered for this folder.</p>
+
+      <label class="music-volume-card" for="music-volume">
+        <span><strong>Music volume</strong><small>Voice volume is not changed.</small></span>
+        <output id="music-volume-value" for="music-volume">18%</output>
+        <input id="music-volume" type="range" min="0" max="100" step="1" value="18">
+      </label>
+
+      <div class="music-list" id="music-list" role="radiogroup" aria-label="Background music"></div>
+
+      <form class="music-upload-panel" id="music-upload-form">
+        <div class="music-upload-heading">
+          <span><strong>Add music</strong><small>Upload an MP3 to the shared AWS music library.</small></span>
+          <span class="storage-mode">Saved in AWS</span>
+        </div>
+        <div class="field-row">
+          <label class="field"><span class="input-label">Track name</span><input id="music-name" maxlength="80" required placeholder="Example: Quiet morning"></label>
+          <label class="field"><span class="input-label">Artist (optional)</span><input id="music-artist" maxlength="80" placeholder="Example: Atlas Audio"></label>
+        </div>
+        <label class="field"><span class="input-label">MP3 file</span><input id="music-file" type="file" required accept="audio/mpeg,.mp3"></label>
+        <p class="form-error" id="music-error" role="alert"></p>
+        <div class="music-upload-actions">
+          <span id="music-upload-status" role="status" aria-live="polite"></span>
+          <button class="primary-button compact" id="add-music-button" type="submit">Add music to AWS</button>
+        </div>
+      </form>
+
+      <div class="dialog-actions"><button class="secondary-button" data-close-dialog type="button">Done</button></div>
+    </div>
+  </dialog>
+
   <dialog id="delete-folder-voice-dialog">
     <form class="dialog-card" id="delete-folder-voice-form">
       <div class="dialog-heading">
@@ -301,6 +342,6 @@
     </form>
   </dialog>
 
-  <script src="./app.js?v=voice-portraits-2"></script>
+  <script src="./app.js?v=background-music-1"></script>
 </body>
 </html>
