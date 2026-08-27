@@ -7,6 +7,10 @@ const FOLDER_VOICE_STORAGE_KEY = "gratitude-voice-studio-folder-voices-v1";
 const BACKGROUND_MUSIC_STORAGE_KEY = "gratitude-voice-studio-background-music-v1";
 const DEFAULT_BACKGROUND_MUSIC_VOLUME = 0.18;
 const MAX_BACKGROUND_MUSIC_BYTES = 30 * 1024 * 1024;
+const MAX_VOICE_SAMPLE_BYTES = 12 * 1024 * 1024;
+const MIN_VOICE_SAMPLE_SECONDS = 3;
+const MAX_VOICE_SAMPLE_SECONDS = 30;
+const VOICE_CLONE_SCRIPT = "As I begin this moment, I take a slow and steady breath. I allow my shoulders to soften and my thoughts to become quiet. I am safe, I am present, and I trust myself to move through today with calm, courage, and kindness.";
 const VOICE_DISPLAY_NAMES = {
   alice: "Amelia",
   "mélanie": "Elena",
@@ -71,6 +75,16 @@ let musicPreviewAudio = null;
 let activeMusicPreviewId = null;
 let musicUploadBusy = false;
 let musicDeleteBusyId = null;
+let voiceSourceMode = "record";
+let voiceMediaRecorder = null;
+let voiceMediaStream = null;
+let voiceRecordingChunks = [];
+let voiceRecordingFile = null;
+let voiceRecordingUrl = null;
+let voiceRecordingStartedAt = 0;
+let voiceRecordingSeconds = 0;
+let voiceRecordingTimer = null;
+let voiceCloneSaving = false;
 
 function loadLocalFolders() {
   try {
@@ -997,6 +1011,224 @@ function renderVoices() {
   grid.innerHTML = voices.map((voice) => `<div class="voice-card${voice.id === selectedVoiceId && !customMode ? " selected" : ""}" data-voice="${voice.id}" role="radio" aria-checked="${voice.id === selectedVoiceId && !customMode}">${voiceAvatarMarkup(voice)}<span class="voice-copy"><strong>${escapeHtml(voice.name)}</strong><small>${escapeHtml(voice.style)}</small></span><span class="voice-actions"><button data-preview="${voice.id}" data-default-label="Preview ${escapeHtml(voice.name)}" type="button" aria-label="Preview ${escapeHtml(voice.name)}" aria-pressed="false">▶</button><button class="delete-voice" data-delete-voice="${voice.id}" type="button" aria-label="Delete ${escapeHtml(voice.name)}">×</button></span></div>`).join("");
 }
 
+function preferredVoiceRecordingMimeType() {
+  if (!window.MediaRecorder) return "";
+  return ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/webm", "audio/ogg"]
+    .find((type) => MediaRecorder.isTypeSupported(type)) || "";
+}
+
+function voiceRecordingExtension(mimeType) {
+  if (mimeType.includes("ogg")) return "ogg";
+  if (mimeType.includes("mp4")) return "m4a";
+  return "webm";
+}
+
+function formatVoiceRecordingTime(seconds) {
+  const whole = Math.max(0, Math.min(MAX_VOICE_SAMPLE_SECONDS, Math.floor(seconds)));
+  return `00:${String(whole).padStart(2, "0")} / 00:${MAX_VOICE_SAMPLE_SECONDS}`;
+}
+
+function clearVoiceRecordingTimer() {
+  if (voiceRecordingTimer) clearInterval(voiceRecordingTimer);
+  voiceRecordingTimer = null;
+}
+
+function stopVoiceMediaStream() {
+  voiceMediaStream?.getTracks().forEach((track) => track.stop());
+  voiceMediaStream = null;
+}
+
+function updateVoiceRecorderUI() {
+  const recording = voiceMediaRecorder?.state === "recording";
+  const hasSample = Boolean(voiceRecordingFile);
+  $("#voice-recorder-card").classList.toggle("recording", recording);
+  $("#start-voice-recording").hidden = recording || hasSample;
+  $("#stop-voice-recording").hidden = !recording;
+  $("#rerecord-voice").hidden = recording || !hasSample;
+  $("#voice-recording-preview").hidden = recording || !hasSample;
+  $("#voice-record-status").textContent = recording ? "Recording…" : hasSample ? "Sample ready" : "Ready to record";
+  $("#voice-record-timer").textContent = formatVoiceRecordingTime(voiceRecordingSeconds);
+}
+
+function discardVoiceRecording(message = "Your browser will ask for microphone permission.") {
+  clearVoiceRecordingTimer();
+  if (voiceMediaRecorder && voiceMediaRecorder.state !== "inactive") {
+    voiceMediaRecorder.ondataavailable = null;
+    voiceMediaRecorder.onstop = null;
+    try { voiceMediaRecorder.stop(); } catch (_) {}
+  }
+  voiceMediaRecorder = null;
+  voiceRecordingChunks = [];
+  stopVoiceMediaStream();
+  if (voiceRecordingUrl) URL.revokeObjectURL(voiceRecordingUrl);
+  voiceRecordingUrl = null;
+  voiceRecordingFile = null;
+  voiceRecordingStartedAt = 0;
+  voiceRecordingSeconds = 0;
+  const preview = $("#voice-recording-preview");
+  preview.pause();
+  preview.removeAttribute("src");
+  preview.load();
+  $("#voice-capture-message").textContent = message;
+  updateVoiceRecorderUI();
+}
+
+function setVoiceSourceMode(mode) {
+  if (!["record", "upload"].includes(mode)) return;
+  if (voiceMediaRecorder?.state === "recording") stopVoiceRecording();
+  voiceSourceMode = mode;
+  $$('[data-voice-source]').forEach((tab) => {
+    const active = tab.dataset.voiceSource === mode;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+  });
+  $("#voice-record-panel").hidden = mode !== "record";
+  $("#voice-upload-panel").hidden = mode !== "upload";
+  $("#voice-error").textContent = "";
+}
+
+function resetVoiceCloneDialog() {
+  $("#voice-form").reset();
+  discardVoiceRecording();
+  voiceSourceMode = "record";
+  $("#voice-upload-filename").textContent = "Choose a clear voice sample";
+  $("#voice-error").textContent = "";
+  $("#voice-save-status").textContent = "";
+  const button = $("#add-voice-button");
+  button.disabled = false;
+  button.innerHTML = 'Save voice <span aria-hidden="true">→</span>';
+  setVoiceSourceMode("record");
+}
+
+function openVoiceCloneDialog() {
+  resetVoiceCloneDialog();
+  $("#voice-dialog").showModal();
+}
+
+async function startVoiceRecording() {
+  if (voiceCloneSaving || voiceMediaRecorder?.state === "recording") return;
+  $("#voice-error").textContent = "";
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    $("#voice-capture-message").textContent = "Microphone recording is not supported in this browser. Use Upload a sample instead.";
+    return;
+  }
+  discardVoiceRecording("Requesting microphone permission…");
+  try {
+    voiceMediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true},
+      video: false,
+    });
+    const mimeType = preferredVoiceRecordingMimeType();
+    voiceMediaRecorder = new MediaRecorder(
+      voiceMediaStream,
+      mimeType ? {mimeType, audioBitsPerSecond: 128000} : undefined,
+    );
+    voiceRecordingChunks = [];
+    voiceRecordingSeconds = 0;
+    voiceMediaRecorder.ondataavailable = (event) => { if (event.data.size) voiceRecordingChunks.push(event.data); };
+    voiceMediaRecorder.onstop = finalizeVoiceRecording;
+    voiceMediaRecorder.start(250);
+    voiceRecordingStartedAt = Date.now();
+    $("#voice-capture-message").textContent = "Speak naturally and finish the paragraph before stopping.";
+    clearVoiceRecordingTimer();
+    voiceRecordingTimer = setInterval(() => {
+      voiceRecordingSeconds = Math.min(MAX_VOICE_SAMPLE_SECONDS, (Date.now() - voiceRecordingStartedAt) / 1000);
+      $("#voice-record-timer").textContent = formatVoiceRecordingTime(voiceRecordingSeconds);
+      if (voiceRecordingSeconds >= MAX_VOICE_SAMPLE_SECONDS) stopVoiceRecording();
+    }, 200);
+    updateVoiceRecorderUI();
+  } catch (error) {
+    stopVoiceMediaStream();
+    voiceMediaRecorder = null;
+    $("#voice-capture-message").textContent = error?.name === "NotAllowedError"
+      ? "Microphone permission was blocked. Allow it in your browser or upload a sample."
+      : "The microphone could not start. Check your device and try again.";
+    updateVoiceRecorderUI();
+  }
+}
+
+function stopVoiceRecording() {
+  if (!voiceMediaRecorder || voiceMediaRecorder.state !== "recording") return;
+  voiceRecordingSeconds = Math.min(MAX_VOICE_SAMPLE_SECONDS, (Date.now() - voiceRecordingStartedAt) / 1000);
+  clearVoiceRecordingTimer();
+  voiceMediaRecorder.stop();
+  stopVoiceMediaStream();
+  updateVoiceRecorderUI();
+}
+
+function finalizeVoiceRecording() {
+  const mimeType = voiceMediaRecorder?.mimeType || preferredVoiceRecordingMimeType() || "audio/webm";
+  const blob = new Blob(voiceRecordingChunks, {type: mimeType});
+  voiceMediaRecorder = null;
+  voiceRecordingChunks = [];
+  stopVoiceMediaStream();
+  if (voiceRecordingSeconds < MIN_VOICE_SAMPLE_SECONDS || !blob.size) {
+    discardVoiceRecording(`Record for at least ${MIN_VOICE_SAMPLE_SECONDS} seconds so Modal has enough voice detail.`);
+    return;
+  }
+  if (blob.size > MAX_VOICE_SAMPLE_BYTES) {
+    discardVoiceRecording("The recording is larger than 12 MB. Please record a shorter sample.");
+    return;
+  }
+  const extension = voiceRecordingExtension(mimeType);
+  voiceRecordingFile = new File([blob], `voice-sample-${Date.now()}.${extension}`, {type: mimeType});
+  if (voiceRecordingUrl) URL.revokeObjectURL(voiceRecordingUrl);
+  voiceRecordingUrl = URL.createObjectURL(blob);
+  const preview = $("#voice-recording-preview");
+  preview.src = voiceRecordingUrl;
+  $("#voice-capture-message").textContent = `${Math.round(voiceRecordingSeconds)}-second sample ready. Listen once, then save your voice.`;
+  updateVoiceRecorderUI();
+}
+
+async function saveClonedVoice(event) {
+  event.preventDefault();
+  if (voiceCloneSaving) return;
+  const file = voiceSourceMode === "record" ? voiceRecordingFile : $("#voice-upload-file").files[0];
+  const name = event.target.elements.name.value.trim();
+  const style = event.target.elements.style.value.trim();
+  $("#voice-error").textContent = "";
+  $("#voice-save-status").textContent = "";
+  if (!file) {
+    $("#voice-error").textContent = voiceSourceMode === "record" ? "Record your voice sample first." : "Choose a voice sample to upload.";
+    return;
+  }
+  if (file.size > MAX_VOICE_SAMPLE_BYTES) {
+    $("#voice-error").textContent = "Voice sample must be 12 MB or smaller.";
+    return;
+  }
+  if (!$("#voice-consent").checked) {
+    $("#voice-error").textContent = "Confirm that you have permission to clone and use this voice.";
+    return;
+  }
+
+  voiceCloneSaving = true;
+  const button = $("#add-voice-button");
+  button.disabled = true;
+  button.textContent = "Saving voice…";
+  $("#voice-save-status").textContent = "Preparing your reusable voice…";
+  try {
+    const data = new FormData();
+    data.set("name", name);
+    data.set("style", style);
+    data.set("reference_text", voiceSourceMode === "record" ? VOICE_CLONE_SCRIPT : "");
+    data.set("consent", "true");
+    data.set("reference_audio", file, file.name);
+    const voice = (await (await modalApi("/api/voices", {method: "POST", body: data})).json()).voice;
+    $("#voice-save-status").textContent = "Voice saved. Adding it to your library…";
+    $("#voice-dialog").close();
+    discardVoiceRecording();
+    await loadVoices(voice.id);
+    showStatus(`${voice.name} is ready to use for new affirmations.`);
+  } catch (error) {
+    $("#voice-error").textContent = error.message || "Could not save this voice.";
+    $("#voice-save-status").textContent = "";
+  } finally {
+    voiceCloneSaving = false;
+    button.disabled = false;
+    button.innerHTML = 'Save voice <span aria-hidden="true">→</span>';
+  }
+}
+
 function stopActivePreview() {
   previewRequestId += 1;
   if (activeAudio) {
@@ -1604,7 +1836,7 @@ $("#affirmation-list").addEventListener("dragover", (event) => { const card = ev
 $("#affirmation-list").addEventListener("drop", (event) => { const card = event.target.closest("[data-affirmation-id]"); if (!card || !draggedAffirmationId) return; event.preventDefault(); const placeAfter = event.clientY > card.getBoundingClientRect().top + card.offsetHeight / 2; moveAffirmationByDrop(draggedAffirmationId, card.dataset.affirmationId, placeAfter); draggedAffirmationId = null; clearDropIndicators(); });
 $("#affirmation-list").addEventListener("dragend", () => { draggedAffirmationId = null; clearDropIndicators(); $$(".affirmation-card.dragging").forEach((card) => card.classList.remove("dragging")); });
 $("#voice-grid").addEventListener("click", async (event) => { const preview = event.target.closest("[data-preview]"); const remove = event.target.closest("[data-delete-voice]"); if (preview) { event.stopPropagation(); return previewVoice(preview.dataset.preview, preview); } if (remove) { event.stopPropagation(); const voice = voices.find((item) => item.id === remove.dataset.deleteVoice); if (!voice || !confirm(`Delete voice “${voice.name}”? This cannot be undone.`)) return; try { await modalApi(`/api/voices/${encodeURIComponent(voice.id)}`, {method: "DELETE"}); await loadVoices(); } catch (error) { showStatus(error.message, true); } return; } const card = event.target.closest("[data-voice]"); if (card) { customMode = false; $("#custom-upload").hidden = true; selectedVoiceId = card.dataset.voice; renderVoices(); } });
-$("#toggle-custom").addEventListener("click", () => { customMode = !customMode; $("#custom-upload").hidden = !customMode; $("#toggle-custom").textContent = customMode ? "Use a prebuilt voice instead" : "Or upload a custom voice sample"; renderVoices(); });
+$("#toggle-custom").addEventListener("click", () => { customMode = !customMode; $("#custom-upload").hidden = !customMode; $("#toggle-custom").textContent = customMode ? "Use a saved voice instead" : "Use a one-time voice sample instead"; renderVoices(); });
 $("#custom-audio").addEventListener("change", (event) => { $("#custom-filename").textContent = event.target.files[0]?.name || ""; });
 $("#affirmation-text").addEventListener("input", (event) => { $("#text-count").textContent = event.target.value.length; });
 [$("#speed"), $("#steps"), $("#guidance"), $("#word-gap")].forEach((input) => input.addEventListener("input", updateSettings));
@@ -1616,8 +1848,17 @@ $("#save-folder-voice").addEventListener("click", saveFolderVoiceVersion);
 $("#folder-new-voice").addEventListener("change", () => { stopActivePreview(); updateSelectedFolderVoiceSummary(); });
 $("#preview-folder-voice").addEventListener("click", (event) => { const voiceId = $("#folder-new-voice").value; if (voiceId) previewVoice(voiceId, event.currentTarget); });
 $("#folder-voice-list").addEventListener("click", (event) => { const button = event.target.closest("[data-batch-play]"); if (button) playBatchPreview(button.dataset.batchPlay, button); });
-$("#open-voice-manager").addEventListener("click", () => $("#voice-dialog").showModal());
-$("#voice-form").addEventListener("submit", async (event) => { event.preventDefault(); const button = $("#add-voice-button"); $("#voice-error").textContent = ""; button.disabled = true; button.textContent = "Adding…"; try { const data = new FormData(event.target); data.set("consent", String($("#voice-consent").checked)); const voice = (await (await modalApi("/api/voices", {method: "POST", body: data})).json()).voice; event.target.reset(); $("#voice-dialog").close(); await loadVoices(voice.id); } catch (error) { $("#voice-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Add to library"; } });
+$("#open-voice-manager").addEventListener("click", openVoiceCloneDialog);
+$$('[data-voice-source]').forEach((tab) => tab.addEventListener("click", () => setVoiceSourceMode(tab.dataset.voiceSource)));
+$("#start-voice-recording").addEventListener("click", startVoiceRecording);
+$("#stop-voice-recording").addEventListener("click", stopVoiceRecording);
+$("#rerecord-voice").addEventListener("click", () => discardVoiceRecording("Ready for a fresh recording."));
+$("#voice-upload-file").addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  $("#voice-upload-filename").textContent = file?.name || "Choose a clear voice sample";
+  $("#voice-error").textContent = file && file.size > MAX_VOICE_SAMPLE_BYTES ? "Voice sample must be 12 MB or smaller." : "";
+});
+$("#voice-form").addEventListener("submit", saveClonedVoice);
 $$('[data-close-dialog]').forEach((button) => button.addEventListener("click", () => {
   const dialog = button.closest("dialog");
   if (dialog.id === "folder-voice-dialog") {
@@ -1628,6 +1869,10 @@ $$('[data-close-dialog]').forEach((button) => button.addEventListener("click", (
   if (dialog.id === "music-dialog") {
     if (musicUploadBusy || musicDeleteBusyId) return;
     stopMusicPreview(false);
+  }
+  if (dialog.id === "voice-dialog") {
+    if (voiceCloneSaving) return;
+    discardVoiceRecording();
   }
   dialog.close();
 }));
@@ -1641,6 +1886,10 @@ $("#delete-folder-voice-dialog").addEventListener("cancel", (event) => {
 $("#music-dialog").addEventListener("cancel", (event) => {
   if (musicUploadBusy || musicDeleteBusyId) return event.preventDefault();
   stopMusicPreview(false);
+});
+$("#voice-dialog").addEventListener("cancel", (event) => {
+  if (voiceCloneSaving) return event.preventDefault();
+  discardVoiceRecording();
 });
 
 updateSettings();

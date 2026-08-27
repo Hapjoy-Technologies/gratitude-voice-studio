@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Newsreader:opsz,wght@6..72,500;6..72,600&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=voice-menu-2">
+  <link rel="stylesheet" href="./styles.css?v=voice-clone-1">
 </head>
 <body>
   <div class="ambient-shape shape-one" aria-hidden="true"></div>
@@ -135,7 +135,7 @@
               </label>
               <div class="field manage-voice-wrap">
                 <span class="input-label">Voice library</span>
-                <button class="secondary-button" id="open-voice-manager" type="button">Add a voice <span aria-hidden="true">＋</span></button>
+                <button class="secondary-button" id="open-voice-manager" type="button">Clone a voice <span aria-hidden="true">＋</span></button>
               </div>
             </div>
 
@@ -144,7 +144,7 @@
               <div class="voice-grid" id="voice-grid"><div class="empty-state small">Loading voices…</div></div>
             </fieldset>
 
-            <button class="text-button" id="toggle-custom" type="button">Use a custom voice sample instead</button>
+            <button class="text-button" id="toggle-custom" type="button">Use a one-time voice sample instead</button>
             <div class="custom-upload" id="custom-upload" hidden>
               <label class="dropzone" for="custom-audio">
                 <strong>Drop in a voice sample</strong>
@@ -223,18 +223,68 @@
     </form>
   </dialog>
 
-  <dialog id="voice-dialog">
-    <form class="dialog-card" id="voice-form">
-      <div class="dialog-heading"><h3>Add a prebuilt voice</h3><button class="icon-button" data-close-dialog type="button">×</button></div>
-      <div class="field-row">
-        <label class="field"><span class="input-label">Voice name</span><input name="name" maxlength="40" required placeholder="Example: Maya"></label>
-        <label class="field"><span class="input-label">Style</span><input name="style" maxlength="60" required placeholder="Calm and warm"></label>
+  <dialog class="wide-dialog voice-clone-dialog" id="voice-dialog">
+    <form class="dialog-card voice-clone-card" id="voice-form">
+      <div class="dialog-heading voice-clone-heading">
+        <div>
+          <span class="eyebrow">Personal voice library</span>
+          <h3>Clone a voice</h3>
+          <p>Capture one clear sample and reuse this voice for every affirmation.</p>
+        </div>
+        <button class="icon-button" data-close-dialog type="button" aria-label="Close">×</button>
       </div>
-      <label class="field"><span class="input-label">Voice sample</span><input name="reference_audio" type="file" required accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac"></label>
-      <input name="reference_text" type="hidden" value="">
-      <label class="checkbox-row"><input id="voice-consent" type="checkbox" required><span>I have permission to add and use this voice.</span></label>
-      <p class="form-error" id="voice-error" role="alert"></p>
-      <div class="dialog-actions"><button class="secondary-button" data-close-dialog type="button">Cancel</button><button class="primary-button" id="add-voice-button" type="submit">Add to library</button></div>
+
+      <div class="voice-source-tabs" role="tablist" aria-label="Voice sample method">
+        <button class="voice-source-tab active" id="voice-record-tab" data-voice-source="record" type="button" role="tab" aria-selected="true" aria-controls="voice-record-panel"><span aria-hidden="true">●</span><span><strong>Record my voice</strong><small>Use your microphone</small></span></button>
+        <button class="voice-source-tab" id="voice-upload-tab" data-voice-source="upload" type="button" role="tab" aria-selected="false" aria-controls="voice-upload-panel"><span aria-hidden="true">↑</span><span><strong>Upload a sample</strong><small>Choose an audio file</small></span></button>
+      </div>
+
+      <section class="voice-source-panel" id="voice-record-panel" role="tabpanel" aria-labelledby="voice-record-tab">
+        <div class="voice-record-layout">
+          <article class="voice-script-card">
+            <div class="voice-step-label"><span>1</span><strong>Read this naturally</strong><small>About 20 seconds</small></div>
+            <blockquote id="voice-clone-script">“As I begin this moment, I take a slow and steady breath. I allow my shoulders to soften and my thoughts to become quiet. I am safe, I am present, and I trust myself to move through today with calm, courage, and kindness.”</blockquote>
+            <div class="voice-record-tips"><span>Quiet room</span><span>Natural pace</span><span>Keep the mic close</span></div>
+          </article>
+
+          <div class="voice-recorder-card" id="voice-recorder-card">
+            <div class="voice-recorder-status"><span class="voice-live-dot" id="voice-live-dot"></span><strong id="voice-record-status">Ready to record</strong><time id="voice-record-timer">00:00 / 00:30</time></div>
+            <div class="voice-waveform" id="voice-waveform" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="voice-record-actions">
+              <button class="voice-record-button" id="start-voice-recording" type="button"><span aria-hidden="true"></span> Start recording</button>
+              <button class="voice-stop-button" id="stop-voice-recording" type="button" hidden><span aria-hidden="true">■</span> Stop recording</button>
+              <button class="secondary-button compact" id="rerecord-voice" type="button" hidden>↻ Record again</button>
+            </div>
+            <audio class="voice-recording-preview" id="voice-recording-preview" controls hidden></audio>
+            <p class="voice-capture-message" id="voice-capture-message" role="status" aria-live="polite">Your browser will ask for microphone permission.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="voice-source-panel" id="voice-upload-panel" role="tabpanel" aria-labelledby="voice-upload-tab" hidden>
+        <label class="voice-sample-dropzone" for="voice-upload-file">
+          <span class="voice-upload-icon" aria-hidden="true">↑</span>
+          <span><strong id="voice-upload-filename">Choose a clear voice sample</strong><small>MP3, WAV, M4A, OGG, AAC or WebM · 3–30 seconds · up to 12 MB</small></span>
+          <span class="voice-upload-browse">Browse</span>
+          <input id="voice-upload-file" type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac,.webm">
+        </label>
+        <div class="voice-upload-guidance"><span aria-hidden="true">✓</span><p><strong>For the best clone</strong>Use one speaker, avoid music or echo, and choose a sample with a calm natural pace.</p></div>
+      </section>
+
+      <section class="voice-clone-details">
+        <div class="voice-step-label"><span>2</span><strong>Name your voice</strong><small>It will appear in your reusable voice library.</small></div>
+        <div class="field-row">
+          <label class="field"><span class="input-label">Voice name</span><input name="name" maxlength="40" required placeholder="Example: My calm voice"></label>
+          <label class="field"><span class="input-label">Voice style</span><input name="style" maxlength="60" required placeholder="Example: Warm and reassuring"></label>
+        </div>
+      </section>
+
+      <label class="voice-consent-card" for="voice-consent">
+        <input id="voice-consent" type="checkbox" required>
+        <span><strong>I have permission to clone and use this voice.</strong><small>The sample is saved privately in the protected voice library and can be deleted later.</small></span>
+      </label>
+      <p class="form-error voice-clone-error" id="voice-error" role="alert"></p>
+      <div class="dialog-actions voice-clone-actions"><span id="voice-save-status" role="status" aria-live="polite"></span><button class="secondary-button" data-close-dialog type="button">Cancel</button><button class="primary-button" id="add-voice-button" type="submit">Save voice <span aria-hidden="true">→</span></button></div>
     </form>
   </dialog>
 
@@ -357,6 +407,6 @@
     </form>
   </dialog>
 
-  <script src="./app.js?v=voice-menu-2"></script>
+  <script src="./app.js?v=voice-clone-1"></script>
 </body>
 </html>
