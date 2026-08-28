@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Newsreader:opsz,wght@6..72,500;6..72,600&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=voice-clone-1">
+  <link rel="stylesheet" href="./styles.css?v=play-all-pause-1">
 </head>
 <body>
   <div class="ambient-shape shape-one" aria-hidden="true"></div>
@@ -105,6 +105,23 @@
                   </div>
                 </div>
                 <button class="secondary-button compact music-button" id="background-music" type="button" disabled><span aria-hidden="true">♫</span> <span id="background-music-label">Music</span></button>
+                <div class="play-all-pause-picker" id="play-all-pause-picker">
+                  <button class="secondary-button compact play-all-pause-trigger" id="play-all-pause-trigger" type="button" aria-haspopup="listbox" aria-controls="play-all-pause-menu" aria-expanded="false" disabled>
+                    <span class="pause-trigger-icon" aria-hidden="true">Ⅱ</span>
+                    <span>Pause <strong id="play-all-pause-label">3s</strong></span>
+                    <span class="pause-trigger-chevron" aria-hidden="true">⌄</span>
+                  </button>
+                  <div class="play-all-pause-menu" id="play-all-pause-menu" hidden>
+                    <div class="play-all-pause-heading"><strong>Pause between affirmations</strong><small>Music keeps playing during the pause.</small></div>
+                    <div class="play-all-pause-options" role="listbox" aria-label="Pause between affirmations">
+                      <button type="button" data-play-all-pause="2" role="option"><span>2</span><small>sec</small><i aria-hidden="true">✓</i></button>
+                      <button type="button" data-play-all-pause="3" role="option"><span>3</span><small>sec</small><i aria-hidden="true">✓</i></button>
+                      <button type="button" data-play-all-pause="6" role="option"><span>6</span><small>sec</small><i aria-hidden="true">✓</i></button>
+                      <button type="button" data-play-all-pause="8" role="option"><span>8</span><small>sec</small><i aria-hidden="true">✓</i></button>
+                      <button type="button" data-play-all-pause="12" role="option"><span>12</span><small>sec</small><i aria-hidden="true">✓</i></button>
+                    </div>
+                  </div>
+                </div>
                 <button class="secondary-button compact" id="play-all" type="button" disabled><span aria-hidden="true">▶</span> Play all</button>
                 <button class="secondary-button compact save-order-button" id="save-order" type="button" hidden>Save changes to AWS</button>
                 <button class="primary-button compact" id="add-to-folder" type="button" disabled>Add affirmation <span aria-hidden="true">＋</span></button>
@@ -407,6 +424,6 @@
     </form>
   </dialog>
 
-  <script src="./app.js?v=voice-clone-1"></script>
+  <script src="./app.js?v=play-all-pause-1"></script>
 </body>
 </html>

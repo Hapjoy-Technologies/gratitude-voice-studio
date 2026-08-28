@@ -5,7 +5,10 @@ const AWS_CONFIGURED = !AWS_API_BASE_URL.startsWith("__");
 const LOCAL_FOLDER_STORAGE_KEY = "gratitude-voice-studio-folders-v1";
 const FOLDER_VOICE_STORAGE_KEY = "gratitude-voice-studio-folder-voices-v1";
 const BACKGROUND_MUSIC_STORAGE_KEY = "gratitude-voice-studio-background-music-v1";
+const PLAY_ALL_PAUSE_STORAGE_KEY = "gratitude-voice-studio-play-all-pause-v1";
 const DEFAULT_BACKGROUND_MUSIC_VOLUME = 0.18;
+const DEFAULT_PLAY_ALL_PAUSE_SECONDS = 3;
+const PLAY_ALL_PAUSE_OPTIONS = [2, 3, 6, 8, 12];
 const MAX_BACKGROUND_MUSIC_BYTES = 30 * 1024 * 1024;
 const MAX_VOICE_SAMPLE_BYTES = 12 * 1024 * 1024;
 const MIN_VOICE_SAMPLE_SECONDS = 3;
@@ -55,6 +58,8 @@ let libraryAudio = null;
 let activeAffirmationId = null;
 let isPlayingAll = false;
 let playlistIndex = 0;
+let playAllPauseSeconds = DEFAULT_PLAY_ALL_PAUSE_SECONDS;
+let playAllPauseTimer = null;
 let draggedAffirmationId = null;
 let orderChanged = false;
 let orderSaving = false;
@@ -149,6 +154,29 @@ function removeMusicFromPreferences(musicId) {
     if (preferences[folderId]?.musicId === musicId) preferences[folderId].musicId = null;
   });
   localStorage.setItem(BACKGROUND_MUSIC_STORAGE_KEY, JSON.stringify(preferences));
+}
+
+function loadPlayAllPausePreferences() {
+  try {
+    const value = JSON.parse(localStorage.getItem(PLAY_ALL_PAUSE_STORAGE_KEY) || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function restorePlayAllPausePreference() {
+  const seconds = Number(loadPlayAllPausePreferences()[selectedFolderId]);
+  playAllPauseSeconds = PLAY_ALL_PAUSE_OPTIONS.includes(seconds)
+    ? seconds
+    : DEFAULT_PLAY_ALL_PAUSE_SECONDS;
+}
+
+function rememberPlayAllPausePreference() {
+  if (!selectedFolderId) return;
+  const preferences = loadPlayAllPausePreferences();
+  preferences[selectedFolderId] = playAllPauseSeconds;
+  localStorage.setItem(PLAY_ALL_PAUSE_STORAGE_KEY, JSON.stringify(preferences));
 }
 
 function itemVoiceVersions(item) {
@@ -556,7 +584,9 @@ async function showApp() {
   renderFolders();
   await Promise.all([loadVoices(), refreshFolders(), loadBackgroundMusic()]);
   restoreBackgroundMusicPreference();
+  restorePlayAllPausePreference();
   renderBackgroundMusicButton();
+  renderPlayAllPausePicker();
   renderBackgroundMusicDialog();
 }
 
@@ -595,6 +625,7 @@ async function refreshFolders(preferredId = selectedFolderId) {
     folders = loadLocalFolders();
     selectedFolderId = folders.some((folder) => folder.id === preferredId) ? preferredId : folders[0]?.id || null;
     restoreBackgroundMusicPreference();
+    restorePlayAllPausePreference();
     rememberFolder();
     renderFolders();
     return refreshAffirmations();
@@ -604,6 +635,7 @@ async function refreshFolders(preferredId = selectedFolderId) {
     folders = payload.folders || [];
     selectedFolderId = folders.some((folder) => folder.id === preferredId) ? preferredId : folders[0]?.id || null;
     restoreBackgroundMusicPreference();
+    restorePlayAllPausePreference();
     rememberFolder();
     renderFolders();
     await refreshAffirmations();
@@ -647,7 +679,13 @@ function releaseLibraryAudio() {
   libraryAudio = null;
 }
 
+function clearPlayAllPauseTimer() {
+  if (playAllPauseTimer) clearTimeout(playAllPauseTimer);
+  playAllPauseTimer = null;
+}
+
 function stopLibraryPlayback(render = true) {
+  clearPlayAllPauseTimer();
   releaseLibraryAudio();
   releaseBackgroundMusic();
   activeAffirmationId = null;
@@ -655,6 +693,25 @@ function stopLibraryPlayback(render = true) {
   playlistIndex = 0;
   $("#library-status").textContent = "";
   if (render) renderAffirmations();
+}
+
+function scheduleNextPlaylistItem() {
+  const nextIndex = playlistIndex + 1;
+  if (!isPlayingAll || nextIndex >= affirmations.length) {
+    stopLibraryPlayback();
+    return;
+  }
+
+  releaseLibraryAudio();
+  activeAffirmationId = null;
+  $("#library-status").textContent = `Pausing ${playAllPauseSeconds} seconds · next is ${nextIndex + 1} of ${affirmations.length}`;
+  renderAffirmations();
+  playAllPauseTimer = setTimeout(() => {
+    playAllPauseTimer = null;
+    if (!isPlayingAll) return;
+    playlistIndex = nextIndex;
+    playLibraryItem(affirmations[playlistIndex]);
+  }, playAllPauseSeconds * 1000);
 }
 
 async function playLibraryItem(item) {
@@ -665,8 +722,7 @@ async function playLibraryItem(item) {
   libraryAudio = new Audio(voice.audioUrl);
   libraryAudio.onended = () => {
     if (isPlayingAll && playlistIndex + 1 < affirmations.length) {
-      playlistIndex += 1;
-      playLibraryItem(affirmations[playlistIndex]);
+      scheduleNextPlaylistItem();
       return;
     }
     stopLibraryPlayback();
@@ -713,6 +769,45 @@ function togglePlayAll() {
   isPlayingAll = true;
   playlistIndex = 0;
   playLibraryItem(affirmations[0]);
+}
+
+function closePlayAllPauseMenu(focusTrigger = false) {
+  const menu = $("#play-all-pause-menu");
+  if (!menu || menu.hidden) return;
+  menu.hidden = true;
+  $("#play-all-pause-trigger").setAttribute("aria-expanded", "false");
+  if (focusTrigger) $("#play-all-pause-trigger").focus();
+}
+
+function togglePlayAllPauseMenu() {
+  const menu = $("#play-all-pause-menu");
+  const opening = menu.hidden;
+  closeFolderVoiceMenu();
+  menu.hidden = !opening;
+  $("#play-all-pause-trigger").setAttribute("aria-expanded", String(opening));
+  if (opening) menu.querySelector(".selected")?.focus();
+}
+
+function renderPlayAllPausePicker() {
+  const trigger = $("#play-all-pause-trigger");
+  if (!trigger) return;
+  trigger.disabled = !selectedFolderId || !affirmations.length;
+  $("#play-all-pause-label").textContent = `${playAllPauseSeconds}s`;
+  $$('[data-play-all-pause]').forEach((option) => {
+    const selected = Number(option.dataset.playAllPause) === playAllPauseSeconds;
+    option.classList.toggle("selected", selected);
+    option.setAttribute("aria-selected", String(selected));
+  });
+  if (trigger.disabled) closePlayAllPauseMenu();
+}
+
+function selectPlayAllPause(seconds) {
+  const value = Number(seconds);
+  if (!PLAY_ALL_PAUSE_OPTIONS.includes(value)) return;
+  playAllPauseSeconds = value;
+  rememberPlayAllPausePreference();
+  renderPlayAllPausePicker();
+  closePlayAllPauseMenu(true);
 }
 
 function markOrderChanged() {
@@ -857,6 +952,7 @@ function closeFolderVoiceMenu(focusTrigger = false) {
 function toggleFolderVoiceMenu() {
   const menu = $("#folder-voice-menu");
   const opening = menu.hidden;
+  if (opening) closePlayAllPauseMenu();
   menu.hidden = !opening;
   $("#folder-voice-trigger").setAttribute("aria-expanded", String(opening));
   if (opening) $("#folder-voice-options").querySelector(".selected")?.focus();
@@ -942,6 +1038,7 @@ function renderAffirmations(loading = false, error = "") {
   $("#save-order").disabled = orderSaving;
   $("#save-order").textContent = orderSaving ? "Saving…" : "Save changes to AWS";
   renderBackgroundMusicButton();
+  renderPlayAllPausePicker();
   renderFolderVoicePicker();
   const list = $("#affirmation-list");
   if (error) return showLibraryError(error);
@@ -976,6 +1073,7 @@ async function createFolder(name) {
     folders.push(folder);
     selectedFolderId = folder.id;
     affirmations = [];
+    restorePlayAllPausePreference();
     saveLocalFolders();
     rememberFolder();
     return renderFolders();
@@ -984,6 +1082,7 @@ async function createFolder(name) {
   folders.push(payload.folder);
   selectedFolderId = payload.folder.id;
   affirmations = [];
+  restorePlayAllPausePreference();
   rememberFolder();
   renderFolders();
 }
@@ -1778,13 +1877,18 @@ async function playBatchPreview(affirmationId, button) {
 $("#login-form").addEventListener("submit", verifyLogin);
 $("#sign-out").addEventListener("click", () => { sessionStorage.removeItem("gratitude-voice-access"); location.reload(); });
 $$('[data-view], [data-view-link]').forEach((element) => element.addEventListener("click", (event) => { event.preventDefault(); showView(element.dataset.view || element.dataset.viewLink); }));
-$("#folder-list").addEventListener("click", async (event) => { const button = event.target.closest("[data-folder]"); if (!button) return; closeFolderVoiceMenu(); stopLibraryPlayback(false); orderChanged = false; selectedFolderId = button.dataset.folder; selectedFolderVoiceId = loadFolderVoicePreferences()[selectedFolderId] || null; restoreBackgroundMusicPreference(); rememberFolder(); renderFolders(); await refreshAffirmations(); });
+$("#folder-list").addEventListener("click", async (event) => { const button = event.target.closest("[data-folder]"); if (!button) return; closeFolderVoiceMenu(); closePlayAllPauseMenu(); stopLibraryPlayback(false); orderChanged = false; selectedFolderId = button.dataset.folder; selectedFolderVoiceId = loadFolderVoicePreferences()[selectedFolderId] || null; restoreBackgroundMusicPreference(); restorePlayAllPausePreference(); rememberFolder(); renderFolders(); await refreshAffirmations(); });
 $("#new-folder").addEventListener("click", () => $("#folder-dialog").showModal());
 $("#folder-form").addEventListener("submit", async (event) => { event.preventDefault(); const button = event.submitter; button.disabled = true; $("#folder-error").textContent = ""; try { await createFolder($("#folder-name").value); event.target.reset(); $("#folder-dialog").close(); } catch (error) { $("#folder-error").textContent = error.message; } finally { button.disabled = false; } });
 $("#new-affirmation").addEventListener("click", () => { if (!folders.length) return $("#folder-dialog").showModal(); showView("generate"); });
 $("#add-to-folder").addEventListener("click", () => { if (!selectedFolderId) return; showView("generate"); });
 $("#play-all").addEventListener("click", togglePlayAll);
 $("#background-music").addEventListener("click", openBackgroundMusicDialog);
+$("#play-all-pause-trigger").addEventListener("click", (event) => { event.stopPropagation(); togglePlayAllPauseMenu(); });
+$("#play-all-pause-menu").addEventListener("click", (event) => {
+  const option = event.target.closest("[data-play-all-pause]");
+  if (option) selectPlayAllPause(option.dataset.playAllPause);
+});
 $("#music-volume").addEventListener("input", (event) => updateBackgroundMusicVolume(event.target.value));
 $("#music-file").addEventListener("change", (event) => {
   const file = event.target.files[0];
@@ -1827,8 +1931,15 @@ $("#folder-voice-options").addEventListener("keydown", (event) => {
       : (current + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
   options[next].focus();
 });
-document.addEventListener("click", (event) => { if (!event.target.closest("#folder-voice-picker")) closeFolderVoiceMenu(); });
-document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !$("#folder-voice-menu").hidden) closeFolderVoiceMenu(true); });
+document.addEventListener("click", (event) => {
+  if (!event.target.closest("#folder-voice-picker")) closeFolderVoiceMenu();
+  if (!event.target.closest("#play-all-pause-picker")) closePlayAllPauseMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (!$("#folder-voice-menu").hidden) closeFolderVoiceMenu(true);
+  if (!$("#play-all-pause-menu").hidden) closePlayAllPauseMenu(true);
+});
 $("#folder-select").addEventListener("change", (event) => { selectedFolderId = event.target.value; rememberFolder(); });
 $("#affirmation-list").addEventListener("click", (event) => { const play = event.target.closest("[data-play-id]"); const move = event.target.closest("[data-move-id]"); if (play) return toggleAffirmationPlayback(play.dataset.playId); if (move) moveAffirmation(move.dataset.moveId, Number(move.dataset.direction)); });
 $("#affirmation-list").addEventListener("dragstart", (event) => { const handle = event.target.closest("[data-drag-id]"); if (!handle || orderSaving) return event.preventDefault(); draggedAffirmationId = handle.dataset.dragId; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", draggedAffirmationId); handle.closest(".affirmation-card")?.classList.add("dragging"); });

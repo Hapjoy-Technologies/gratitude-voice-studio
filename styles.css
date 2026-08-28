@@ -139,6 +139,26 @@ nav { display: flex; align-items: center; gap: 3px; padding: 4px; border: 1px so
 .folder-voice-add:disabled { opacity: .42; cursor: not-allowed; }
 .music-button.active { color: var(--plum-deep); border-color: rgba(104, 76, 114, .34); background: var(--surface-tint); }
 .music-button.active > span:first-child { animation: music-note-pulse 1.8s ease-in-out infinite; }
+.play-all-pause-picker { position: relative; }
+.play-all-pause-trigger { gap: 7px; white-space: nowrap; }
+.play-all-pause-trigger strong { color: var(--plum-deep); font-size: inherit; }
+.pause-trigger-icon { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; color: var(--plum) !important; background: var(--plum-soft); font-size: 8px !important; font-weight: 800; letter-spacing: 1px; }
+.pause-trigger-chevron { color: var(--muted) !important; font-size: 13px !important; line-height: 1; transition: transform .16s ease; }
+.play-all-pause-trigger[aria-expanded="true"] { color: var(--plum-deep); border-color: rgba(104, 76, 114, .44); background: var(--surface-tint); }
+.play-all-pause-trigger[aria-expanded="true"] .pause-trigger-chevron { transform: rotate(180deg); }
+.play-all-pause-trigger:disabled { opacity: .42; cursor: not-allowed; }
+.play-all-pause-menu { width: 278px; position: absolute; z-index: 30; top: calc(100% + 8px); right: 0; padding: 12px; border: 1px solid var(--line); border-radius: 17px; background: rgba(255, 253, 250, .98); box-shadow: 0 22px 48px -26px rgba(45, 39, 48, .58); backdrop-filter: blur(16px); }
+.play-all-pause-heading { display: grid; gap: 2px; padding: 1px 2px 10px; }
+.play-all-pause-heading strong { color: var(--ink); font-size: 10px; }
+.play-all-pause-heading small { color: var(--muted); font-size: 8px; line-height: 1.4; }
+.play-all-pause-options { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+.play-all-pause-options button { min-width: 0; min-height: 52px; position: relative; display: grid; place-content: center; gap: 0; padding: 5px 2px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink-soft); background: var(--surface-soft); transition: color .16s ease, border-color .16s ease, background .16s ease, transform .16s ease; }
+.play-all-pause-options button:hover { color: var(--plum-deep); border-color: rgba(104, 76, 114, .32); background: var(--surface-tint); transform: translateY(-1px); }
+.play-all-pause-options button.selected { color: #fff; border-color: var(--plum); background: var(--plum); box-shadow: 0 9px 18px -13px rgba(81, 57, 91, .78); }
+.play-all-pause-options button span { color: inherit; font-size: 13px; font-weight: 750; }
+.play-all-pause-options button small { color: inherit; font-size: 7px; opacity: .76; }
+.play-all-pause-options button i { position: absolute; top: 4px; right: 5px; color: transparent; font-size: 7px; font-style: normal; }
+.play-all-pause-options button.selected i { color: #fff; }
 .library-status { min-height: 0; color: var(--muted); font-size: 10px; }
 .library-status:not(:empty) { padding-top: 12px; }
 .affirmation-list { display: grid; gap: 10px; padding-top: 18px; }
@@ -458,6 +478,8 @@ dialog::backdrop { background: rgba(45, 39, 48, .22); backdrop-filter: blur(6px)
   .folder-actions > * { flex: 1; }
   .folder-voice-picker, .folder-voice-trigger { width: 100%; }
   .folder-voice-menu { right: auto; left: 0; width: min(280px, calc(100vw - 60px)); }
+  .play-all-pause-trigger { width: 100%; }
+  .play-all-pause-menu { right: auto; left: 0; width: min(278px, calc(100vw - 60px)); }
   .affirmation-card { grid-template-columns: 20px minmax(0, 1fr); }
   .affirmation-card .card-actions { grid-column: 2; flex-wrap: wrap; }
   .affirmation-meta span::after { display: none; }
