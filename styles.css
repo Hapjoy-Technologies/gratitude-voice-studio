@@ -223,7 +223,6 @@ input:focus, select:focus, textarea:focus { border-color: rgba(104, 76, 114, .68
 .checkbox-row input { width: auto; min-height: 0; accent-color: var(--plum); }
 .text-field { margin-top: 16px; }
 .text-wrap { position: relative; }
-.text-wrap small { position: absolute; right: 12px; bottom: 9px; color: var(--muted); font-family: var(--sans); font-size: 9px; }
 .sidebar-intro { display: grid; grid-template-columns: 36px 1fr; align-items: start; gap: 11px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
 .sidebar-number { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid rgba(104, 76, 114, .18); border-radius: 50%; color: var(--plum); background: var(--surface-tint); font-family: var(--serif); font-size: 13px; }
 .sidebar-intro strong, .sidebar-intro small { display: block; }
