@@ -13,6 +13,7 @@ const MAX_BACKGROUND_MUSIC_BYTES = 30 * 1024 * 1024;
 const MAX_VOICE_SAMPLE_BYTES = 12 * 1024 * 1024;
 const MIN_VOICE_SAMPLE_SECONDS = 3;
 const MAX_VOICE_SAMPLE_SECONDS = 30;
+const GENERATION_POLL_INTERVAL_MS = 2500;
 const VOICE_CLONE_SCRIPT = "As I begin this moment, I take a slow and steady breath. I allow my shoulders to soften and my thoughts to become quiet. I am safe, I am present, and I trust myself to move through today with calm, courage, and kindness.";
 const VOICE_DISPLAY_NAMES = {
   alice: "Amelia",
@@ -1463,10 +1464,26 @@ function voiceGenerationData(text, voiceId, referenceFile = null, consent = true
 }
 
 async function generateVoiceBlob(text, voiceId) {
-  return (await modalApi("/generate", {
+  return generateVoiceBlobFromData(voiceGenerationData(text, voiceId));
+}
+
+async function generateVoiceBlobFromData(data) {
+  const submitted = await modalApi("/api/generation-jobs", {
     method: "POST",
-    body: voiceGenerationData(text, voiceId),
-  })).blob();
+    body: data,
+  });
+  const payload = await submitted.json();
+  if (!payload.jobId) throw new Error("Modal did not return a generation job.");
+
+  while (true) {
+    await new Promise((resolve) => setTimeout(resolve, GENERATION_POLL_INTERVAL_MS));
+    const response = await modalApi(
+      `/api/generation-jobs/${encodeURIComponent(payload.jobId)}?output_format=mp3`,
+      {cache: "no-store"},
+    );
+    if (response.status === 202) continue;
+    return response.blob();
+  }
 }
 
 async function generate(event) {
@@ -1495,7 +1512,7 @@ async function generate(event) {
   $("#result-card").hidden = true;
   showStatus("Starting the GPU and generating your audio. The first request may take longer.");
   try {
-    const blob = await (await modalApi("/generate", {method: "POST", body: data})).blob();
+    const blob = await generateVoiceBlobFromData(data);
     if (resultUrl) URL.revokeObjectURL(resultUrl);
     resultUrl = URL.createObjectURL(blob);
     pendingGeneration = {
