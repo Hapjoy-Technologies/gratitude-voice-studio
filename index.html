@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Newsreader:opsz,wght@6..72,500;6..72,600&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=immersive-library-1">
+  <link rel="stylesheet" href="./styles.css?v=library-sections-2">
 </head>
 <body>
   <div class="ambient-shape shape-one" aria-hidden="true"></div>
@@ -94,7 +94,6 @@
               <div class="folder-hero-copy">
                 <span class="section-kicker">Affirmation collection</span>
                 <h3 id="folder-title">Select a folder</h3>
-                <p>A personal listening space for a calmer, more grounded day.</p>
                 <div class="folder-hero-meta"><strong>Gratitude</strong><span id="folder-summary">0 affirmations</span></div>
               </div>
             </div>
@@ -137,6 +136,7 @@
                     </div>
                   </div>
                   <button class="secondary-button compact save-order-button" id="save-order" type="button" hidden>Save changes to AWS</button>
+                  <button class="secondary-button compact folder-customize-button" id="folder-customize" type="button" disabled><span aria-hidden="true">▣</span> Cover &amp; section</button>
                   <button class="primary-button compact" id="add-to-folder" type="button" disabled>Add affirmation <span aria-hidden="true">＋</span></button>
                 </div>
               </div>
@@ -147,13 +147,14 @@
 
             <aside class="now-playing" id="player-panel" aria-label="Now playing">
               <div class="now-playing-topline"><span>Now playing</span><button id="player-music" type="button" aria-label="Choose background music">♫</button></div>
-              <div class="player-art" id="player-cover" aria-hidden="true"><span>G</span><i></i></div>
-              <div class="player-copy">
-                <span id="player-state">Choose an affirmation</span>
-                <h4 id="player-title">Your words will appear here</h4>
-                <p id="player-voice">Tap play to begin a mindful listening session.</p>
+              <div class="player-session-stage">
+                <div class="player-copy">
+                  <span id="player-state">Choose an affirmation</span>
+                  <h4 id="player-title">Mindful session</h4>
+                </div>
+                <div class="player-transcript" id="player-transcript" aria-live="polite">Select any affirmation to see each word flow with the voice.</div>
+                <p class="player-voice" id="player-voice">Tap play to begin a mindful listening session.</p>
               </div>
-              <div class="player-transcript" id="player-transcript" aria-live="polite">Select any affirmation to see each word flow with the voice.</div>
               <div class="player-timeline">
                 <input id="player-seek" type="range" min="0" max="1000" value="0" aria-label="Playback position">
                 <div><time id="player-current-time">0:00</time><time id="player-duration">0:00</time></div>
@@ -273,8 +274,32 @@
     <form class="dialog-card" id="folder-form">
       <div class="dialog-heading"><h3>Create folder</h3><button class="icon-button" data-close-dialog type="button">×</button></div>
       <label class="field"><span class="input-label">Folder name</span><input id="folder-name" maxlength="60" required placeholder="Example: Morning confidence"></label>
+      <label class="field"><span class="input-label">Library section</span><input id="folder-section" maxlength="50" placeholder="Example: Heal and grow"></label>
       <p class="form-error" id="folder-error" role="alert"></p>
       <div class="dialog-actions"><button class="secondary-button" data-close-dialog type="button">Cancel</button><button class="primary-button" type="submit">Create folder</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="folder-customize-dialog" id="folder-customize-dialog">
+    <form class="dialog-card folder-customize-card" id="folder-customize-form">
+      <div class="dialog-heading">
+        <div><span class="eyebrow">Folder appearance</span><h3>Cover and section</h3><p>Organise this folder and add a cover image to your shared AWS library.</p></div>
+        <button class="icon-button" data-close-dialog type="button" aria-label="Close">×</button>
+      </div>
+      <div class="folder-cover-editor">
+        <div class="folder-cover-preview" id="folder-cover-preview" aria-hidden="true"><span>G</span></div>
+        <div class="folder-cover-upload-copy">
+          <strong>Folder cover</strong>
+          <span>JPG, PNG or WebP · up to 8 MB</span>
+          <label class="secondary-button compact" for="folder-cover-file">Choose image</label>
+          <input id="folder-cover-file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+          <button class="text-danger" id="remove-folder-cover" type="button" hidden>Remove current image</button>
+        </div>
+      </div>
+      <label class="field"><span class="input-label">Library section</span><input id="folder-customize-section" maxlength="50" placeholder="Example: Achieve your goals"><small>Folders with the same section appear together on the library screen.</small></label>
+      <p class="folder-customize-status" id="folder-customize-status" role="status"></p>
+      <p class="form-error" id="folder-customize-error" role="alert"></p>
+      <div class="dialog-actions"><button class="secondary-button" data-close-dialog type="button">Cancel</button><button class="primary-button" id="save-folder-customize" type="submit">Save changes</button></div>
     </form>
   </dialog>
 
@@ -462,6 +487,6 @@
     </form>
   </dialog>
 
-  <script src="./app.js?v=immersive-library-1"></script>
+  <script src="./app.js?v=library-sections-2"></script>
 </body>
 </html>

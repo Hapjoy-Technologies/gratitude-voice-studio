@@ -10,6 +10,7 @@ const DEFAULT_BACKGROUND_MUSIC_VOLUME = 0.18;
 const DEFAULT_PLAY_ALL_PAUSE_SECONDS = 3;
 const PLAY_ALL_PAUSE_OPTIONS = [2, 3, 6, 8, 12];
 const MAX_BACKGROUND_MUSIC_BYTES = 30 * 1024 * 1024;
+const MAX_FOLDER_COVER_BYTES = 8 * 1024 * 1024;
 const MAX_VOICE_SAMPLE_BYTES = 12 * 1024 * 1024;
 const MIN_VOICE_SAMPLE_SECONDS = 3;
 const MAX_VOICE_SAMPLE_SECONDS = 30;
@@ -103,6 +104,9 @@ let voiceRecordingStartedAt = 0;
 let voiceRecordingSeconds = 0;
 let voiceRecordingTimer = null;
 let voiceCloneSaving = false;
+let folderCoverPreviewUrl = null;
+let folderCoverRemoveRequested = false;
+let folderCustomizeBusy = false;
 
 function loadLocalFolders() {
   try {
@@ -263,6 +267,24 @@ function folderCoverStyle(folder) {
 
 function folderMark(folder) {
   return String(folder?.name || "G").trim().slice(0, 1).toLocaleUpperCase() || "G";
+}
+
+function folderSectionName(folder) {
+  return String(folder?.section || "").trim() || "Your collections";
+}
+
+function folderCoverContent(folder, {withPlay = true} = {}) {
+  const image = folder?.coverUrl
+    ? `<img src="${escapeHtml(folder.coverUrl)}" alt="">`
+    : `<span>${escapeHtml(folderMark(folder))}</span>`;
+  return `${image}${withPlay ? '<i aria-hidden="true"></i>' : ""}`;
+}
+
+function applyFolderCover(element, folder, {withPlay = true} = {}) {
+  if (!element) return;
+  element.setAttribute("style", folderCoverStyle(folder));
+  element.classList.toggle("has-cover-image", Boolean(folder?.coverUrl));
+  element.innerHTML = folderCoverContent(folder, {withPlay});
 }
 
 function renderLibraryMode() {
@@ -844,10 +866,13 @@ function renderPlayerTranscript(item) {
   if (!transcript) return;
   const words = String(item?.title || "").trim().split(/\s+/).filter(Boolean);
   if (!words.length) {
+    transcript.classList.remove("long", "very-long");
     transcript.removeAttribute("aria-label");
     transcript.textContent = "Select any affirmation to see each word flow with the voice.";
     return;
   }
+  transcript.classList.toggle("long", words.length > 16);
+  transcript.classList.toggle("very-long", words.length > 30);
   transcript.setAttribute("aria-label", item.title);
   transcript.innerHTML = words.map((word, index) => `<span class="word" data-player-word="${index}" aria-hidden="true">${escapeHtml(word)}</span>`).join(" ");
 }
@@ -861,10 +886,7 @@ function renderPlayerPanel() {
   const playing = Boolean(item && activeAffirmationId === item.identifier && libraryAudio && !libraryAudio.paused);
   const voice = selectedVoiceVersion(item);
   const itemIndex = item ? affirmations.findIndex((candidate) => candidate.identifier === item.identifier) : -1;
-  const coverStyle = folderCoverStyle(folder);
-  $("#player-cover").setAttribute("style", coverStyle);
-  $("#player-cover").querySelector("span").textContent = folderMark(folder);
-  $("#player-title").textContent = item?.title || "Your words will appear here";
+  $("#player-title").textContent = item ? `Affirmation ${itemIndex + 1}` : "Mindful session";
   $("#player-voice").textContent = item
     ? `${voice?.voiceName || "Voice unavailable"} · ${itemIndex + 1} of ${affirmations.length}`
     : "Tap play to begin a mindful listening session.";
@@ -909,8 +931,6 @@ function updatePlayerProgress() {
   });
   if (nextActiveWord !== playerActiveWord) {
     playerActiveWord = nextActiveWord;
-    const activeWord = wordElements[nextActiveWord];
-    if (activeWord && nextActiveWord % 3 === 0) activeWord.scrollIntoView({block: "nearest", behavior: "smooth"});
   }
 }
 
@@ -1045,7 +1065,14 @@ function renderFolders() {
   if (!folders.length) {
     list.innerHTML = '<div class="empty-state small">No collections yet.<br>Create your first affirmation folder.</div>';
   } else {
-    list.innerHTML = folders.map((folder) => {
+    const groups = new Map();
+    folders.forEach((folder) => {
+      const section = folderSectionName(folder);
+      if (!groups.has(section)) groups.set(section, []);
+      groups.get(section).push(folder);
+    });
+    list.innerHTML = [...groups.entries()].map(([section, sectionFolders]) => {
+      const cards = sectionFolders.map((folder) => {
       const storedCount = Number(folder.affirmationCount ?? folder.recordingCount ?? folder.count);
       const count = Number.isFinite(storedCount) && storedCount >= 0
         ? storedCount
@@ -1055,15 +1082,16 @@ function renderFolders() {
       const subtitle = count === null
         ? "Open affirmation collection"
         : `${count} affirmation${count === 1 ? "" : "s"}`;
-      return `<button class="collection-card" data-folder="${escapeHtml(folder.id)}" type="button" aria-label="Open ${escapeHtml(folder.name)}"><span class="collection-card-art" style="${folderCoverStyle(folder)}"><span>${escapeHtml(folderMark(folder))}</span><i aria-hidden="true"></i></span><span class="collection-card-copy"><strong>${escapeHtml(folder.name)}</strong><small>${escapeHtml(subtitle)}</small></span></button>`;
+      return `<button class="collection-card" data-folder="${escapeHtml(folder.id)}" type="button" aria-label="Open ${escapeHtml(folder.name)}"><span class="collection-card-art${folder.coverUrl ? " has-cover-image" : ""}" style="${folderCoverStyle(folder)}">${folderCoverContent(folder)}</span><span class="collection-card-copy"><strong>${escapeHtml(folder.name)}</strong><small>${escapeHtml(subtitle)}</small></span></button>`;
+      }).join("");
+      return `<section class="collection-section"><div class="collection-section-heading"><h4>${escapeHtml(section)}</h4><span>${sectionFolders.length} folder${sectionFolders.length === 1 ? "" : "s"}</span></div><div class="collection-grid">${cards}</div></section>`;
     }).join("");
   }
   const folder = folders.find((item) => item.id === selectedFolderId);
   if (folder) {
     const coverStyle = folderCoverStyle(folder);
     $("#folder-hero").setAttribute("style", coverStyle);
-    $("#folder-hero-art").setAttribute("style", coverStyle);
-    $("#folder-hero-art").querySelector("span").textContent = folderMark(folder);
+    applyFolderCover($("#folder-hero-art"), folder);
   }
   renderLibraryMode();
   renderAffirmations();
@@ -1208,6 +1236,7 @@ function renderAffirmations(loading = false, error = "") {
   $("#folder-title").textContent = folder?.name || "Select a folder";
   $("#folder-summary").textContent = `${affirmations.length} affirmation${affirmations.length === 1 ? "" : "s"}${voiceCount ? ` · ${voiceCount} voice${voiceCount === 1 ? "" : "s"}` : ""}`;
   $("#add-to-folder").disabled = !folder;
+  $("#folder-customize").disabled = !AWS_CONFIGURED || !folder;
   $("#add-folder-voice").disabled = !AWS_CONFIGURED || !folder || !affirmations.length || !voices.length;
   $("#play-all").disabled = !folder || !affirmations.length;
   $("#play-all").innerHTML = isPlayingAll
@@ -1248,9 +1277,9 @@ function renderAffirmations(loading = false, error = "") {
   }
 }
 
-async function createFolder(name) {
+async function createFolder(name, section = "") {
   if (!AWS_CONFIGURED) {
-    const folder = {id: `folder-${crypto.randomUUID()}`, name: name.trim(), createdAt: new Date().toISOString()};
+    const folder = {id: `folder-${crypto.randomUUID()}`, name: name.trim(), section: section.trim(), createdAt: new Date().toISOString()};
     folders.push(folder);
     selectedFolderId = folder.id;
     libraryDetailOpen = true;
@@ -1261,7 +1290,7 @@ async function createFolder(name) {
     rememberFolder();
     return renderFolders();
   }
-  const payload = await awsApi("/folders", {method: "POST", body: JSON.stringify({name: name.trim()})});
+  const payload = await awsApi("/folders", {method: "POST", body: JSON.stringify({name: name.trim(), section: section.trim()})});
   folders.push(payload.folder);
   selectedFolderId = payload.folder.id;
   libraryDetailOpen = true;
@@ -1270,6 +1299,115 @@ async function createFolder(name) {
   restorePlayAllPausePreference();
   rememberFolder();
   renderFolders();
+}
+
+function releaseFolderCoverPreview() {
+  if (folderCoverPreviewUrl) URL.revokeObjectURL(folderCoverPreviewUrl);
+  folderCoverPreviewUrl = null;
+}
+
+function renderFolderCoverPreview(folder, imageUrl = folder?.coverUrl || "") {
+  const preview = $("#folder-cover-preview");
+  if (!preview) return;
+  preview.setAttribute("style", folderCoverStyle(folder));
+  preview.innerHTML = imageUrl
+    ? `<img src="${escapeHtml(imageUrl)}" alt="">`
+    : `<span>${escapeHtml(folderMark(folder))}</span>`;
+}
+
+function openFolderCustomizeDialog() {
+  const folder = folders.find((item) => item.id === selectedFolderId);
+  if (!AWS_CONFIGURED || !folder || folderCustomizeBusy) return;
+  releaseFolderCoverPreview();
+  folderCoverRemoveRequested = false;
+  $("#folder-cover-file").value = "";
+  $("#folder-customize-section").value = folder.section || "";
+  $("#folder-customize-status").textContent = "";
+  $("#folder-customize-error").textContent = "";
+  $("#remove-folder-cover").hidden = !folder.coverKey;
+  renderFolderCoverPreview(folder);
+  $("#folder-customize-dialog").showModal();
+}
+
+function previewFolderCoverFile(file) {
+  const folder = folders.find((item) => item.id === selectedFolderId);
+  $("#folder-customize-error").textContent = "";
+  if (!file || !folder) return renderFolderCoverPreview(folder);
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    $("#folder-cover-file").value = "";
+    $("#folder-customize-error").textContent = "Choose a JPG, PNG, or WebP image.";
+    return renderFolderCoverPreview(folder);
+  }
+  if (file.size > MAX_FOLDER_COVER_BYTES) {
+    $("#folder-cover-file").value = "";
+    $("#folder-customize-error").textContent = "Folder cover must be 8 MB or smaller.";
+    return renderFolderCoverPreview(folder);
+  }
+  releaseFolderCoverPreview();
+  folderCoverPreviewUrl = URL.createObjectURL(file);
+  folderCoverRemoveRequested = false;
+  renderFolderCoverPreview(folder, folderCoverPreviewUrl);
+  $("#remove-folder-cover").hidden = false;
+}
+
+function removeFolderCoverSelection() {
+  const folder = folders.find((item) => item.id === selectedFolderId);
+  releaseFolderCoverPreview();
+  folderCoverRemoveRequested = true;
+  $("#folder-cover-file").value = "";
+  $("#remove-folder-cover").hidden = true;
+  $("#folder-customize-error").textContent = "";
+  $("#folder-customize-status").textContent = "The current cover will be removed when you save.";
+  renderFolderCoverPreview(folder, "");
+}
+
+async function saveFolderCustomization(event) {
+  event.preventDefault();
+  const folder = folders.find((item) => item.id === selectedFolderId);
+  if (!AWS_CONFIGURED || !folder || folderCustomizeBusy) return;
+  const file = $("#folder-cover-file").files[0];
+  const section = $("#folder-customize-section").value.trim();
+  const button = $("#save-folder-customize");
+  const update = {section};
+  folderCustomizeBusy = true;
+  button.disabled = true;
+  $("#folder-customize-error").textContent = "";
+  try {
+    if (file) {
+      $("#folder-customize-status").textContent = "Preparing secure AWS upload…";
+      const upload = await awsApi(`/folders/${encodeURIComponent(folder.id)}/cover/presign`, {
+        method: "POST",
+        body: JSON.stringify({contentType: file.type, fileSize: file.size}),
+      });
+      $("#folder-customize-status").textContent = "Uploading cover to AWS…";
+      const uploaded = await fetch(upload.uploadUrl, {
+        method: "PUT",
+        headers: upload.requiredHeaders,
+        body: file,
+      });
+      if (!uploaded.ok) throw new Error(`Cover upload failed (${uploaded.status}).`);
+      update.coverKey = upload.coverKey;
+    } else if (folderCoverRemoveRequested) {
+      update.coverKey = null;
+    }
+    $("#folder-customize-status").textContent = "Saving folder details…";
+    const result = await awsApi(`/folders/${encodeURIComponent(folder.id)}`, {
+      method: "PUT",
+      body: JSON.stringify(update),
+    });
+    folders = folders.map((item) => item.id === folder.id ? result.folder : item);
+    releaseFolderCoverPreview();
+    folderCoverRemoveRequested = false;
+    $("#folder-customize-dialog").close();
+    renderFolders();
+    $("#library-status").textContent = "Folder cover and section saved in AWS.";
+  } catch (error) {
+    $("#folder-customize-error").textContent = error.message || "Could not update this folder.";
+    $("#folder-customize-status").textContent = "";
+  } finally {
+    folderCustomizeBusy = false;
+    button.disabled = false;
+  }
 }
 
 async function loadVoices(preferredId = selectedVoiceId) {
@@ -2091,7 +2229,11 @@ $$('[data-view], [data-view-link]').forEach((element) => element.addEventListene
 $("#folder-list").addEventListener("click", async (event) => { const button = event.target.closest("[data-folder]"); if (!button) return; closeFolderVoiceMenu(); closePlayAllPauseMenu(); stopLibraryPlayback(false); orderChanged = false; libraryDetailOpen = true; playerAffirmationId = null; playerActiveWord = -1; selectedFolderId = button.dataset.folder; selectedFolderVoiceId = loadFolderVoicePreferences()[selectedFolderId] || null; restoreBackgroundMusicPreference(); restorePlayAllPausePreference(); rememberFolder(); renderFolders(); await refreshAffirmations(); });
 $("#library-back").addEventListener("click", () => { stopLibraryPlayback(false); libraryDetailOpen = false; playerAffirmationId = null; renderLibraryMode(); renderPlayerPanel(); });
 $("#new-folder").addEventListener("click", () => $("#folder-dialog").showModal());
-$("#folder-form").addEventListener("submit", async (event) => { event.preventDefault(); const button = event.submitter; button.disabled = true; $("#folder-error").textContent = ""; try { await createFolder($("#folder-name").value); event.target.reset(); $("#folder-dialog").close(); } catch (error) { $("#folder-error").textContent = error.message; } finally { button.disabled = false; } });
+$("#folder-form").addEventListener("submit", async (event) => { event.preventDefault(); const button = event.submitter; button.disabled = true; $("#folder-error").textContent = ""; try { await createFolder($("#folder-name").value, $("#folder-section").value); event.target.reset(); $("#folder-dialog").close(); } catch (error) { $("#folder-error").textContent = error.message; } finally { button.disabled = false; } });
+$("#folder-customize").addEventListener("click", openFolderCustomizeDialog);
+$("#folder-cover-file").addEventListener("change", (event) => previewFolderCoverFile(event.target.files[0]));
+$("#remove-folder-cover").addEventListener("click", removeFolderCoverSelection);
+$("#folder-customize-form").addEventListener("submit", saveFolderCustomization);
 $("#new-affirmation").addEventListener("click", () => { if (!folders.length) return $("#folder-dialog").showModal(); showView("generate"); });
 $("#add-to-folder").addEventListener("click", () => { if (!selectedFolderId) return; showView("generate"); });
 $("#play-all").addEventListener("click", togglePlayAll);
@@ -2210,6 +2352,11 @@ $$('[data-close-dialog]').forEach((button) => button.addEventListener("click", (
     if (voiceCloneSaving) return;
     discardVoiceRecording();
   }
+  if (dialog.id === "folder-customize-dialog") {
+    if (folderCustomizeBusy) return;
+    releaseFolderCoverPreview();
+    folderCoverRemoveRequested = false;
+  }
   dialog.close();
 }));
 $("#folder-voice-dialog").addEventListener("cancel", (event) => {
@@ -2218,6 +2365,11 @@ $("#folder-voice-dialog").addEventListener("cancel", (event) => {
 });
 $("#delete-folder-voice-dialog").addEventListener("cancel", (event) => {
   if (folderVoiceDeleteBusy) event.preventDefault();
+});
+$("#folder-customize-dialog").addEventListener("cancel", (event) => {
+  if (folderCustomizeBusy) return event.preventDefault();
+  releaseFolderCoverPreview();
+  folderCoverRemoveRequested = false;
 });
 $("#music-dialog").addEventListener("cancel", (event) => {
   if (musicUploadBusy || musicDeleteBusyId) return event.preventDefault();
