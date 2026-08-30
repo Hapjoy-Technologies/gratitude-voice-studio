@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Newsreader:opsz,wght@6..72,500;6..72,600&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=no-text-limit-1">
+  <link rel="stylesheet" href="./styles.css?v=immersive-library-1">
 </head>
 <body>
   <div class="ambient-shape shape-one" aria-hidden="true"></div>
@@ -63,11 +63,11 @@
 
     <main class="page-wrap">
       <section class="view" id="library-view">
-        <div class="page-heading">
+        <div class="page-heading library-page-heading">
           <div>
-            <span class="eyebrow">Audio workspace</span>
+            <span class="eyebrow">Your listening space</span>
             <h2>Affirmation library</h2>
-            <p>Everything you create, organised in one calm place.</p>
+            <p>Choose a collection, settle in, and listen in your own rhythm.</p>
           </div>
           <div class="heading-actions">
             <span class="storage-mode" id="storage-mode">Browser draft</span>
@@ -75,62 +75,101 @@
           </div>
         </div>
 
-        <div class="library-layout">
-          <aside class="folder-panel">
-            <div class="panel-heading">
-              <span>Your folders</span>
-              <button class="mini-button" id="new-folder" type="button" aria-label="Create folder">＋</button>
+        <section class="collection-browser" id="collection-browser">
+          <div class="collection-browser-heading">
+            <div>
+              <span class="section-kicker">Made for your mindful moments</span>
+              <h3>Your collections</h3>
             </div>
-            <div class="folder-list" id="folder-list"></div>
-          </aside>
+            <button class="secondary-button compact" id="new-folder" type="button"><span aria-hidden="true">＋</span> New folder</button>
+          </div>
+          <div class="folder-list" id="folder-list"></div>
+        </section>
 
-          <section class="content-panel">
-            <div class="content-heading">
-              <div>
+        <section class="folder-detail" id="folder-detail" hidden>
+          <div class="folder-hero" id="folder-hero">
+            <button class="folder-back" id="library-back" type="button"><span aria-hidden="true">←</span> All collections</button>
+            <div class="folder-hero-content">
+              <div class="folder-hero-art" id="folder-hero-art" aria-hidden="true"><span>G</span><i></i></div>
+              <div class="folder-hero-copy">
+                <span class="section-kicker">Affirmation collection</span>
                 <h3 id="folder-title">Select a folder</h3>
-                <span id="folder-summary">0 affirmations</span>
+                <p>A personal listening space for a calmer, more grounded day.</p>
+                <div class="folder-hero-meta"><strong>Gratitude</strong><span id="folder-summary">0 affirmations</span></div>
               </div>
-              <div class="folder-actions">
-                <div class="folder-voice-picker" id="folder-voice-picker" hidden>
-                  <button class="folder-voice-trigger" id="folder-voice-trigger" type="button" aria-haspopup="listbox" aria-controls="folder-voice-menu" aria-expanded="false">
-                    <span class="folder-voice-avatar" id="folder-voice-avatar" aria-hidden="true"></span>
-                    <span class="folder-voice-current"><small>Voice</small><strong id="folder-voice-name">Select voice</strong></span>
-                    <span class="folder-voice-chevron" aria-hidden="true">⌄</span>
-                  </button>
-                  <div class="folder-voice-menu" id="folder-voice-menu" hidden>
-                    <div class="folder-voice-menu-heading">Available voices</div>
-                    <div class="folder-voice-options" id="folder-voice-options" role="listbox" aria-label="Voice version"></div>
-                    <div class="folder-voice-menu-divider"></div>
-                    <button class="folder-voice-add" id="add-folder-voice" type="button"><span aria-hidden="true">＋</span> Add another voice</button>
-                  </div>
-                </div>
-                <button class="secondary-button compact music-button" id="background-music" type="button" disabled><span aria-hidden="true">♫</span> <span id="background-music-label">Music</span></button>
-                <div class="play-all-pause-picker" id="play-all-pause-picker">
-                  <button class="secondary-button compact play-all-pause-trigger" id="play-all-pause-trigger" type="button" aria-haspopup="listbox" aria-controls="play-all-pause-menu" aria-expanded="false" disabled>
-                    <span class="pause-trigger-icon" aria-hidden="true">Ⅱ</span>
-                    <span>Pause <strong id="play-all-pause-label">3s</strong></span>
-                    <span class="pause-trigger-chevron" aria-hidden="true">⌄</span>
-                  </button>
-                  <div class="play-all-pause-menu" id="play-all-pause-menu" hidden>
-                    <div class="play-all-pause-heading"><strong>Pause between affirmations</strong><small>Music keeps playing during the pause.</small></div>
-                    <div class="play-all-pause-options" role="listbox" aria-label="Pause between affirmations">
-                      <button type="button" data-play-all-pause="2" role="option"><span>2</span><small>sec</small><i aria-hidden="true">✓</i></button>
-                      <button type="button" data-play-all-pause="3" role="option"><span>3</span><small>sec</small><i aria-hidden="true">✓</i></button>
-                      <button type="button" data-play-all-pause="6" role="option"><span>6</span><small>sec</small><i aria-hidden="true">✓</i></button>
-                      <button type="button" data-play-all-pause="8" role="option"><span>8</span><small>sec</small><i aria-hidden="true">✓</i></button>
-                      <button type="button" data-play-all-pause="12" role="option"><span>12</span><small>sec</small><i aria-hidden="true">✓</i></button>
+            </div>
+          </div>
+
+          <div class="folder-detail-grid">
+            <section class="content-panel">
+              <div class="content-heading">
+                <button class="hero-play-button" id="play-all" type="button" disabled><span aria-hidden="true">▶</span><span>Play all</span></button>
+                <div class="folder-actions">
+                  <div class="folder-voice-picker" id="folder-voice-picker" hidden>
+                    <button class="folder-voice-trigger" id="folder-voice-trigger" type="button" aria-haspopup="listbox" aria-controls="folder-voice-menu" aria-expanded="false">
+                      <span class="folder-voice-avatar" id="folder-voice-avatar" aria-hidden="true"></span>
+                      <span class="folder-voice-current"><small>Voice</small><strong id="folder-voice-name">Select voice</strong></span>
+                      <span class="folder-voice-chevron" aria-hidden="true">⌄</span>
+                    </button>
+                    <div class="folder-voice-menu" id="folder-voice-menu" hidden>
+                      <div class="folder-voice-menu-heading">Available voices</div>
+                      <div class="folder-voice-options" id="folder-voice-options" role="listbox" aria-label="Voice version"></div>
+                      <div class="folder-voice-menu-divider"></div>
+                      <button class="folder-voice-add" id="add-folder-voice" type="button"><span aria-hidden="true">＋</span> Add another voice</button>
                     </div>
                   </div>
+                  <button class="secondary-button compact music-button" id="background-music" type="button" disabled><span aria-hidden="true">♫</span> <span id="background-music-label">Music</span></button>
+                  <div class="play-all-pause-picker" id="play-all-pause-picker">
+                    <button class="secondary-button compact play-all-pause-trigger" id="play-all-pause-trigger" type="button" aria-haspopup="listbox" aria-controls="play-all-pause-menu" aria-expanded="false" disabled>
+                      <span class="pause-trigger-icon" aria-hidden="true">Ⅱ</span>
+                      <span>Pause <strong id="play-all-pause-label">3s</strong></span>
+                      <span class="pause-trigger-chevron" aria-hidden="true">⌄</span>
+                    </button>
+                    <div class="play-all-pause-menu" id="play-all-pause-menu" hidden>
+                      <div class="play-all-pause-heading"><strong>Pause between affirmations</strong><small>Music keeps playing during the pause.</small></div>
+                      <div class="play-all-pause-options" role="listbox" aria-label="Pause between affirmations">
+                        <button type="button" data-play-all-pause="2" role="option"><span>2</span><small>sec</small><i aria-hidden="true">✓</i></button>
+                        <button type="button" data-play-all-pause="3" role="option"><span>3</span><small>sec</small><i aria-hidden="true">✓</i></button>
+                        <button type="button" data-play-all-pause="6" role="option"><span>6</span><small>sec</small><i aria-hidden="true">✓</i></button>
+                        <button type="button" data-play-all-pause="8" role="option"><span>8</span><small>sec</small><i aria-hidden="true">✓</i></button>
+                        <button type="button" data-play-all-pause="12" role="option"><span>12</span><small>sec</small><i aria-hidden="true">✓</i></button>
+                      </div>
+                    </div>
+                  </div>
+                  <button class="secondary-button compact save-order-button" id="save-order" type="button" hidden>Save changes to AWS</button>
+                  <button class="primary-button compact" id="add-to-folder" type="button" disabled>Add affirmation <span aria-hidden="true">＋</span></button>
                 </div>
-                <button class="secondary-button compact" id="play-all" type="button" disabled><span aria-hidden="true">▶</span> Play all</button>
-                <button class="secondary-button compact save-order-button" id="save-order" type="button" hidden>Save changes to AWS</button>
-                <button class="primary-button compact" id="add-to-folder" type="button" disabled>Add affirmation <span aria-hidden="true">＋</span></button>
               </div>
-            </div>
-            <div class="library-status" id="library-status" role="status" aria-live="polite"></div>
-            <div class="affirmation-list" id="affirmation-list"></div>
-          </section>
-        </div>
+              <div class="track-list-heading" aria-hidden="true"><span>#</span><span>Affirmation</span><span>Voice &amp; saved</span><span>Actions</span></div>
+              <div class="library-status" id="library-status" role="status" aria-live="polite"></div>
+              <div class="affirmation-list" id="affirmation-list"></div>
+            </section>
+
+            <aside class="now-playing" id="player-panel" aria-label="Now playing">
+              <div class="now-playing-topline"><span>Now playing</span><button id="player-music" type="button" aria-label="Choose background music">♫</button></div>
+              <div class="player-art" id="player-cover" aria-hidden="true"><span>G</span><i></i></div>
+              <div class="player-copy">
+                <span id="player-state">Choose an affirmation</span>
+                <h4 id="player-title">Your words will appear here</h4>
+                <p id="player-voice">Tap play to begin a mindful listening session.</p>
+              </div>
+              <div class="player-transcript" id="player-transcript" aria-live="polite">Select any affirmation to see each word flow with the voice.</div>
+              <div class="player-timeline">
+                <input id="player-seek" type="range" min="0" max="1000" value="0" aria-label="Playback position">
+                <div><time id="player-current-time">0:00</time><time id="player-duration">0:00</time></div>
+              </div>
+              <div class="player-controls">
+                <button id="player-previous" type="button" aria-label="Previous affirmation">‹</button>
+                <button class="player-main-control" id="player-toggle" type="button" aria-label="Play affirmation">▶</button>
+                <button id="player-next" type="button" aria-label="Next affirmation">›</button>
+              </div>
+              <div class="player-footer">
+                <button id="player-music-summary" type="button"><span aria-hidden="true">♫</span><span id="player-music-name">No background music</span></button>
+                <label><span aria-hidden="true">▸</span><input id="player-volume" type="range" min="0" max="100" value="100" aria-label="Voice volume"></label>
+              </div>
+            </aside>
+          </div>
+        </section>
       </section>
 
       <section class="view" id="generate-view" hidden>
@@ -423,6 +462,6 @@
     </form>
   </dialog>
 
-  <script src="./app.js?v=no-text-limit-1"></script>
+  <script src="./app.js?v=immersive-library-1"></script>
 </body>
 </html>

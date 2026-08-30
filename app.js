@@ -33,6 +33,14 @@ const VOICE_IMAGE_ASSETS = {
   "male-voice-2": "./assets/voices/noah.png",
   "male-voice-3": "./assets/voices/adrian.png",
 };
+const FOLDER_COVER_PALETTES = [
+  ["#c98fa4", "#73527d", "#f0c7a9"],
+  ["#78a9a6", "#355e68", "#c7dcae"],
+  ["#d9a06f", "#8b565e", "#f1d29a"],
+  ["#91a0c7", "#514e79", "#d7b7ce"],
+  ["#a9b985", "#566b58", "#e2caa2"],
+  ["#c98b79", "#704757", "#eac6b6"],
+];
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -57,6 +65,10 @@ let generationProgressHideTimer = null;
 let generationProgressValue = 0;
 let libraryAudio = null;
 let activeAffirmationId = null;
+let playerAffirmationId = null;
+let playerActiveWord = -1;
+let libraryDetailOpen = false;
+let libraryVolume = 1;
 let isPlayingAll = false;
 let playlistIndex = 0;
 let playAllPauseSeconds = DEFAULT_PLAY_ALL_PAUSE_SECONDS;
@@ -237,6 +249,32 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, (character) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[character]);
 }
 
+function folderCoverPalette(folder) {
+  const seed = String(folder?.id || folder?.name || "gratitude");
+  let hash = 0;
+  for (const character of seed) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
+  return FOLDER_COVER_PALETTES[Math.abs(hash) % FOLDER_COVER_PALETTES.length];
+}
+
+function folderCoverStyle(folder) {
+  const [first, second, accent] = folderCoverPalette(folder);
+  return `--cover-a:${first};--cover-b:${second};--cover-c:${accent}`;
+}
+
+function folderMark(folder) {
+  return String(folder?.name || "G").trim().slice(0, 1).toLocaleUpperCase() || "G";
+}
+
+function renderLibraryMode() {
+  const overview = $("#collection-browser");
+  const detail = $("#folder-detail");
+  const heading = $(".library-page-heading");
+  if (!overview || !detail) return;
+  overview.hidden = libraryDetailOpen;
+  detail.hidden = !libraryDetailOpen;
+  if (heading) heading.hidden = libraryDetailOpen;
+}
+
 function initials(name) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 }
@@ -339,6 +377,8 @@ function renderBackgroundMusicButton() {
   button.classList.toggle("active", Boolean(track));
   $("#background-music-label").textContent = track?.name || "Music";
   button.title = track ? "Background music: " + track.name : "Choose background music";
+  const playerMusicName = $("#player-music-name");
+  if (playerMusicName) playerMusicName.textContent = track?.name || "No background music";
 }
 
 function renderBackgroundMusicDialog() {
@@ -434,6 +474,7 @@ function selectBackgroundMusic(musicId) {
   rememberBackgroundMusicPreference();
   renderBackgroundMusicButton();
   renderBackgroundMusicDialog();
+  renderPlayerPanel();
   if (!libraryAudio || libraryAudio.paused) {
     releaseBackgroundMusic();
     return;
@@ -597,6 +638,7 @@ function showView(name) {
   $("#generate-view").hidden = name !== "generate";
   $$(".nav-button").forEach((button) => button.classList.toggle("active", button.dataset.view === name));
   if (name === "generate") renderFolderSelect();
+  if (name === "library") renderLibraryMode();
   location.hash = name;
 }
 
@@ -675,6 +717,10 @@ function releaseLibraryAudio() {
   if (!libraryAudio) return;
   libraryAudio.onended = null;
   libraryAudio.onerror = null;
+  libraryAudio.onloadedmetadata = null;
+  libraryAudio.ontimeupdate = null;
+  libraryAudio.onplay = null;
+  libraryAudio.onpause = null;
   libraryAudio.pause();
   libraryAudio.currentTime = 0;
   libraryAudio = null;
@@ -694,6 +740,7 @@ function stopLibraryPlayback(render = true) {
   playlistIndex = 0;
   $("#library-status").textContent = "";
   if (render) renderAffirmations();
+  else renderPlayerPanel();
 }
 
 function scheduleNextPlaylistItem() {
@@ -720,7 +767,15 @@ async function playLibraryItem(item) {
   if (!voice?.audioUrl) return;
   releaseLibraryAudio();
   activeAffirmationId = item.identifier;
+  playerAffirmationId = item.identifier;
+  playerActiveWord = -1;
   libraryAudio = new Audio(voice.audioUrl);
+  libraryAudio.preload = "metadata";
+  libraryAudio.volume = libraryVolume;
+  libraryAudio.onloadedmetadata = updatePlayerProgress;
+  libraryAudio.ontimeupdate = updatePlayerProgress;
+  libraryAudio.onplay = renderPlayerPanel;
+  libraryAudio.onpause = renderPlayerPanel;
   libraryAudio.onended = () => {
     if (isPlayingAll && playlistIndex + 1 < affirmations.length) {
       scheduleNextPlaylistItem();
@@ -736,6 +791,7 @@ async function playLibraryItem(item) {
     ? `Playing ${playlistIndex + 1} of ${affirmations.length}`
     : `Playing ${voice.voiceName}`;
   const musicPlayback = startBackgroundMusic().catch(() => false);
+  renderPlayerPanel();
   try {
     await libraryAudio.play();
     const musicStarted = await musicPlayback;
@@ -770,6 +826,113 @@ function togglePlayAll() {
   isPlayingAll = true;
   playlistIndex = 0;
   playLibraryItem(affirmations[0]);
+}
+
+function formatPlaybackTime(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function currentPlayerItem() {
+  return affirmations.find((item) => item.identifier === (activeAffirmationId || playerAffirmationId))
+    || affirmations[0]
+    || null;
+}
+
+function renderPlayerTranscript(item) {
+  const transcript = $("#player-transcript");
+  if (!transcript) return;
+  const words = String(item?.title || "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) {
+    transcript.removeAttribute("aria-label");
+    transcript.textContent = "Select any affirmation to see each word flow with the voice.";
+    return;
+  }
+  transcript.setAttribute("aria-label", item.title);
+  transcript.innerHTML = words.map((word, index) => `<span class="word" data-player-word="${index}" aria-hidden="true">${escapeHtml(word)}</span>`).join(" ");
+}
+
+function renderPlayerPanel() {
+  const panel = $("#player-panel");
+  if (!panel) return;
+  const folder = folders.find((item) => item.id === selectedFolderId);
+  const item = currentPlayerItem();
+  const track = selectedBackgroundMusicTrack();
+  const playing = Boolean(item && activeAffirmationId === item.identifier && libraryAudio && !libraryAudio.paused);
+  const voice = selectedVoiceVersion(item);
+  const itemIndex = item ? affirmations.findIndex((candidate) => candidate.identifier === item.identifier) : -1;
+  const coverStyle = folderCoverStyle(folder);
+  $("#player-cover").setAttribute("style", coverStyle);
+  $("#player-cover").querySelector("span").textContent = folderMark(folder);
+  $("#player-title").textContent = item?.title || "Your words will appear here";
+  $("#player-voice").textContent = item
+    ? `${voice?.voiceName || "Voice unavailable"} · ${itemIndex + 1} of ${affirmations.length}`
+    : "Tap play to begin a mindful listening session.";
+  $("#player-state").textContent = playing
+    ? "Playing now"
+    : isPlayingAll && !libraryAudio
+      ? `A ${playAllPauseSeconds}-second mindful pause`
+      : item
+        ? "Ready to listen"
+        : "Choose an affirmation";
+  $("#player-toggle").textContent = playing ? "■" : "▶";
+  $("#player-toggle").setAttribute("aria-label", playing ? "Stop affirmation" : "Play affirmation");
+  $("#player-toggle").disabled = !voice?.audioUrl;
+  $("#player-previous").disabled = itemIndex <= 0;
+  $("#player-next").disabled = itemIndex < 0 || itemIndex >= affirmations.length - 1;
+  $("#player-music-name").textContent = track?.name || "No background music";
+  $("#player-volume").value = String(Math.round(libraryVolume * 100));
+  renderPlayerTranscript(item);
+  updatePlayerProgress();
+}
+
+function updatePlayerProgress() {
+  const seek = $("#player-seek");
+  if (!seek) return;
+  const item = currentPlayerItem();
+  const isCurrentAudio = Boolean(item && libraryAudio && activeAffirmationId === item.identifier);
+  const duration = isCurrentAudio && Number.isFinite(libraryAudio.duration) ? libraryAudio.duration : 0;
+  const currentTime = isCurrentAudio ? libraryAudio.currentTime : 0;
+  const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
+  seek.value = String(Math.round(progress * 1000));
+  seek.disabled = !duration;
+  $("#player-current-time").textContent = formatPlaybackTime(currentTime);
+  $("#player-duration").textContent = formatPlaybackTime(duration);
+
+  const wordElements = $$("#player-transcript [data-player-word]");
+  const nextActiveWord = currentTime > 0 && wordElements.length
+    ? Math.min(wordElements.length - 1, Math.floor(progress * wordElements.length))
+    : -1;
+  wordElements.forEach((word, index) => {
+    word.classList.toggle("past", index < nextActiveWord);
+    word.classList.toggle("active", index === nextActiveWord);
+  });
+  if (nextActiveWord !== playerActiveWord) {
+    playerActiveWord = nextActiveWord;
+    const activeWord = wordElements[nextActiveWord];
+    if (activeWord && nextActiveWord % 3 === 0) activeWord.scrollIntoView({block: "nearest", behavior: "smooth"});
+  }
+}
+
+function togglePlayerPlayback() {
+  const item = currentPlayerItem();
+  if (!item) return;
+  if (activeAffirmationId === item.identifier && libraryAudio && !libraryAudio.paused) {
+    stopLibraryPlayback();
+    return;
+  }
+  stopLibraryPlayback(false);
+  playLibraryItem(item);
+}
+
+function playRelativeAffirmation(direction) {
+  const item = currentPlayerItem();
+  const currentIndex = item ? affirmations.findIndex((candidate) => candidate.identifier === item.identifier) : -1;
+  const nextItem = affirmations[currentIndex + direction];
+  if (!nextItem || !selectedVoiceVersion(nextItem)?.audioUrl) return;
+  stopLibraryPlayback(false);
+  playerAffirmationId = nextItem.identifier;
+  playLibraryItem(nextItem);
 }
 
 function closePlayAllPauseMenu(focusTrigger = false) {
@@ -880,14 +1043,29 @@ function renderFolders() {
   if (selectedFolderId && !folders.some((folder) => folder.id === selectedFolderId)) selectedFolderId = folders[0]?.id || null;
   const list = $("#folder-list");
   if (!folders.length) {
-    list.innerHTML = '<div class="empty-state small">No folders yet.<br>Create your first folder.</div>';
+    list.innerHTML = '<div class="empty-state small">No collections yet.<br>Create your first affirmation folder.</div>';
   } else {
     list.innerHTML = folders.map((folder) => {
-      const count = folder.id === selectedFolderId ? affirmations.length : null;
-      const subtitle = count === null ? "Open folder" : `${count} affirmation${count === 1 ? "" : "s"}`;
-      return `<button class="folder-button${folder.id === selectedFolderId ? " active" : ""}" data-folder="${folder.id}" type="button"><span class="folder-icon">▰</span><span class="folder-copy"><strong>${escapeHtml(folder.name)}</strong><small>${subtitle}</small></span></button>`;
+      const storedCount = Number(folder.affirmationCount ?? folder.recordingCount ?? folder.count);
+      const count = Number.isFinite(storedCount) && storedCount >= 0
+        ? storedCount
+        : folder.id === selectedFolderId
+          ? affirmations.length
+          : null;
+      const subtitle = count === null
+        ? "Open affirmation collection"
+        : `${count} affirmation${count === 1 ? "" : "s"}`;
+      return `<button class="collection-card" data-folder="${escapeHtml(folder.id)}" type="button" aria-label="Open ${escapeHtml(folder.name)}"><span class="collection-card-art" style="${folderCoverStyle(folder)}"><span>${escapeHtml(folderMark(folder))}</span><i aria-hidden="true"></i></span><span class="collection-card-copy"><strong>${escapeHtml(folder.name)}</strong><small>${escapeHtml(subtitle)}</small></span></button>`;
     }).join("");
   }
+  const folder = folders.find((item) => item.id === selectedFolderId);
+  if (folder) {
+    const coverStyle = folderCoverStyle(folder);
+    $("#folder-hero").setAttribute("style", coverStyle);
+    $("#folder-hero-art").setAttribute("style", coverStyle);
+    $("#folder-hero-art").querySelector("span").textContent = folderMark(folder);
+  }
+  renderLibraryMode();
   renderAffirmations();
   renderFolderSelect();
 }
@@ -1033,14 +1211,15 @@ function renderAffirmations(loading = false, error = "") {
   $("#add-folder-voice").disabled = !AWS_CONFIGURED || !folder || !affirmations.length || !voices.length;
   $("#play-all").disabled = !folder || !affirmations.length;
   $("#play-all").innerHTML = isPlayingAll
-    ? '<span aria-hidden="true">■</span> Stop all'
-    : '<span aria-hidden="true">▶</span> Play all';
+    ? '<span aria-hidden="true">■</span><span>Stop all</span>'
+    : '<span aria-hidden="true">▶</span><span>Play all</span>';
   $("#save-order").hidden = !orderChanged;
   $("#save-order").disabled = orderSaving;
   $("#save-order").textContent = orderSaving ? "Saving…" : "Save changes to AWS";
   renderBackgroundMusicButton();
   renderPlayAllPausePicker();
   renderFolderVoicePicker();
+  renderPlayerPanel();
   const list = $("#affirmation-list");
   if (error) return showLibraryError(error);
   if (loading) {
@@ -1063,7 +1242,8 @@ function renderAffirmations(loading = false, error = "") {
       const voiceLabel = voiceImage
         ? `<span class="affirmation-voice"><img src="${escapeHtml(voiceImage)}" alt="">${escapeHtml(voiceName)}</span>`
         : `<span>${escapeHtml(voiceName)}</span>`;
-      return `<article class="affirmation-card${playing ? " playing" : ""}" data-affirmation-id="${escapeHtml(item.identifier)}"><span class="drag-handle" data-drag-id="${escapeHtml(item.identifier)}" draggable="true" aria-hidden="true" title="Drag to reorder">⋮⋮</span><div><p>${escapeHtml(item.title)}</p><div class="affirmation-meta">${voiceLabel}<span>${new Date(createdAt).toLocaleString()}</span><span>${item.local ? "Browser preview" : "Saved in AWS"}</span></div></div><div class="card-actions"><button data-move-id="${escapeHtml(item.identifier)}" data-direction="-1" type="button" aria-label="Move affirmation up" title="Move up"${index === 0 ? " disabled" : ""}>↑</button><button data-move-id="${escapeHtml(item.identifier)}" data-direction="1" type="button" aria-label="Move affirmation down" title="Move down"${index === affirmations.length - 1 ? " disabled" : ""}>↓</button><button data-play-id="${escapeHtml(item.identifier)}" type="button" aria-label="${playing ? "Stop" : "Play"} ${escapeHtml(item.title)}" title="${playing ? "Stop" : "Play"}"${playDisabled ? " disabled" : ""}>${playing ? "■" : "▶"}</button>${download}</div></article>`;
+      const savedLabel = item.local ? "Browser preview" : "Saved in AWS";
+      return `<article class="affirmation-card${playing ? " playing" : ""}" data-affirmation-id="${escapeHtml(item.identifier)}"><span class="drag-handle" data-drag-id="${escapeHtml(item.identifier)}" draggable="true" aria-hidden="true" title="Drag to reorder">⋮⋮</span><div class="affirmation-main"><p>${escapeHtml(item.title)}</p><div class="affirmation-meta">${voiceLabel}<span>${escapeHtml(savedLabel)}</span></div></div><div class="affirmation-track-meta"><strong>${escapeHtml(voiceName)}</strong><span>${escapeHtml(savedLabel)} · ${new Date(createdAt).toLocaleDateString()}</span></div><div class="card-actions"><button data-move-id="${escapeHtml(item.identifier)}" data-direction="-1" type="button" aria-label="Move affirmation up" title="Move up"${index === 0 ? " disabled" : ""}>↑</button><button data-move-id="${escapeHtml(item.identifier)}" data-direction="1" type="button" aria-label="Move affirmation down" title="Move down"${index === affirmations.length - 1 ? " disabled" : ""}>↓</button><button data-play-id="${escapeHtml(item.identifier)}" type="button" aria-label="${playing ? "Stop" : "Play"} ${escapeHtml(item.title)}" title="${playing ? "Stop" : "Play"}"${playDisabled ? " disabled" : ""}>${playing ? "■" : "▶"}</button>${download}</div></article>`;
     }).join("");
   }
 }
@@ -1073,6 +1253,8 @@ async function createFolder(name) {
     const folder = {id: `folder-${crypto.randomUUID()}`, name: name.trim(), createdAt: new Date().toISOString()};
     folders.push(folder);
     selectedFolderId = folder.id;
+    libraryDetailOpen = true;
+    playerAffirmationId = null;
     affirmations = [];
     restorePlayAllPausePreference();
     saveLocalFolders();
@@ -1082,6 +1264,8 @@ async function createFolder(name) {
   const payload = await awsApi("/folders", {method: "POST", body: JSON.stringify({name: name.trim()})});
   folders.push(payload.folder);
   selectedFolderId = payload.folder.id;
+  libraryDetailOpen = true;
+  playerAffirmationId = null;
   affirmations = [];
   restorePlayAllPausePreference();
   rememberFolder();
@@ -1584,6 +1768,8 @@ async function confirmSave() {
       }),
     });
     selectedFolderId = pendingGeneration.folderId;
+    libraryDetailOpen = true;
+    playerAffirmationId = saved.affirmation.identifier;
     rememberFolder();
     pendingGeneration = null;
     $("#result-card").hidden = true;
@@ -1893,14 +2079,37 @@ async function playBatchPreview(affirmationId, button) {
 
 $("#login-form").addEventListener("submit", verifyLogin);
 $("#sign-out").addEventListener("click", () => { sessionStorage.removeItem("gratitude-voice-access"); location.reload(); });
-$$('[data-view], [data-view-link]').forEach((element) => element.addEventListener("click", (event) => { event.preventDefault(); showView(element.dataset.view || element.dataset.viewLink); }));
-$("#folder-list").addEventListener("click", async (event) => { const button = event.target.closest("[data-folder]"); if (!button) return; closeFolderVoiceMenu(); closePlayAllPauseMenu(); stopLibraryPlayback(false); orderChanged = false; selectedFolderId = button.dataset.folder; selectedFolderVoiceId = loadFolderVoicePreferences()[selectedFolderId] || null; restoreBackgroundMusicPreference(); restorePlayAllPausePreference(); rememberFolder(); renderFolders(); await refreshAffirmations(); });
+$$('[data-view], [data-view-link]').forEach((element) => element.addEventListener("click", (event) => {
+  event.preventDefault();
+  const view = element.dataset.view || element.dataset.viewLink;
+  if (view === "library" && (element.classList.contains("nav-button") || element.hasAttribute("data-view-link"))) {
+    libraryDetailOpen = false;
+    renderLibraryMode();
+  }
+  showView(view);
+}));
+$("#folder-list").addEventListener("click", async (event) => { const button = event.target.closest("[data-folder]"); if (!button) return; closeFolderVoiceMenu(); closePlayAllPauseMenu(); stopLibraryPlayback(false); orderChanged = false; libraryDetailOpen = true; playerAffirmationId = null; playerActiveWord = -1; selectedFolderId = button.dataset.folder; selectedFolderVoiceId = loadFolderVoicePreferences()[selectedFolderId] || null; restoreBackgroundMusicPreference(); restorePlayAllPausePreference(); rememberFolder(); renderFolders(); await refreshAffirmations(); });
+$("#library-back").addEventListener("click", () => { stopLibraryPlayback(false); libraryDetailOpen = false; playerAffirmationId = null; renderLibraryMode(); renderPlayerPanel(); });
 $("#new-folder").addEventListener("click", () => $("#folder-dialog").showModal());
 $("#folder-form").addEventListener("submit", async (event) => { event.preventDefault(); const button = event.submitter; button.disabled = true; $("#folder-error").textContent = ""; try { await createFolder($("#folder-name").value); event.target.reset(); $("#folder-dialog").close(); } catch (error) { $("#folder-error").textContent = error.message; } finally { button.disabled = false; } });
 $("#new-affirmation").addEventListener("click", () => { if (!folders.length) return $("#folder-dialog").showModal(); showView("generate"); });
 $("#add-to-folder").addEventListener("click", () => { if (!selectedFolderId) return; showView("generate"); });
 $("#play-all").addEventListener("click", togglePlayAll);
 $("#background-music").addEventListener("click", openBackgroundMusicDialog);
+$("#player-music").addEventListener("click", openBackgroundMusicDialog);
+$("#player-music-summary").addEventListener("click", openBackgroundMusicDialog);
+$("#player-toggle").addEventListener("click", togglePlayerPlayback);
+$("#player-previous").addEventListener("click", () => playRelativeAffirmation(-1));
+$("#player-next").addEventListener("click", () => playRelativeAffirmation(1));
+$("#player-seek").addEventListener("input", (event) => {
+  if (!libraryAudio || !Number.isFinite(libraryAudio.duration)) return;
+  libraryAudio.currentTime = libraryAudio.duration * (Number(event.target.value) / 1000);
+  updatePlayerProgress();
+});
+$("#player-volume").addEventListener("input", (event) => {
+  libraryVolume = Math.min(1, Math.max(0, Number(event.target.value) / 100));
+  if (libraryAudio) libraryAudio.volume = libraryVolume;
+});
 $("#play-all-pause-trigger").addEventListener("click", (event) => { event.stopPropagation(); togglePlayAllPauseMenu(); });
 $("#play-all-pause-menu").addEventListener("click", (event) => {
   const option = event.target.closest("[data-play-all-pause]");
@@ -1958,7 +2167,7 @@ document.addEventListener("keydown", (event) => {
   if (!$("#play-all-pause-menu").hidden) closePlayAllPauseMenu(true);
 });
 $("#folder-select").addEventListener("change", (event) => { selectedFolderId = event.target.value; rememberFolder(); });
-$("#affirmation-list").addEventListener("click", (event) => { const play = event.target.closest("[data-play-id]"); const move = event.target.closest("[data-move-id]"); if (play) return toggleAffirmationPlayback(play.dataset.playId); if (move) moveAffirmation(move.dataset.moveId, Number(move.dataset.direction)); });
+$("#affirmation-list").addEventListener("click", (event) => { const play = event.target.closest("[data-play-id]"); const move = event.target.closest("[data-move-id]"); const card = event.target.closest("[data-affirmation-id]"); if (play) return toggleAffirmationPlayback(play.dataset.playId); if (move) return moveAffirmation(move.dataset.moveId, Number(move.dataset.direction)); if (card && !event.target.closest("a")) { playerAffirmationId = card.dataset.affirmationId; playerActiveWord = -1; renderPlayerPanel(); } });
 $("#affirmation-list").addEventListener("dragstart", (event) => { const handle = event.target.closest("[data-drag-id]"); if (!handle || orderSaving) return event.preventDefault(); draggedAffirmationId = handle.dataset.dragId; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", draggedAffirmationId); handle.closest(".affirmation-card")?.classList.add("dragging"); });
 $("#affirmation-list").addEventListener("dragover", (event) => { const card = event.target.closest("[data-affirmation-id]"); if (!card || !draggedAffirmationId || card.dataset.affirmationId === draggedAffirmationId) return; event.preventDefault(); clearDropIndicators(); const placeAfter = event.clientY > card.getBoundingClientRect().top + card.offsetHeight / 2; card.classList.add(placeAfter ? "drop-after" : "drop-before"); event.dataTransfer.dropEffect = "move"; });
 $("#affirmation-list").addEventListener("drop", (event) => { const card = event.target.closest("[data-affirmation-id]"); if (!card || !draggedAffirmationId) return; event.preventDefault(); const placeAfter = event.clientY > card.getBoundingClientRect().top + card.offsetHeight / 2; moveAffirmationByDrop(draggedAffirmationId, card.dataset.affirmationId, placeAfter); draggedAffirmationId = null; clearDropIndicators(); });
