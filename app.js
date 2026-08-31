@@ -301,7 +301,7 @@ function closeFolderCardMenus(focusTrigger = false) {
   if (!focusTrigger) folderMenuLastTrigger = null;
 }
 
-function toggleFolderCardMenu(folderId, trigger) {
+function toggleFolderCardMenu(folderId, trigger, focusFirst = false) {
   const opening = openFolderMenuId !== folderId;
   closeFolderCardMenus(false);
   if (!opening) return;
@@ -312,7 +312,7 @@ function toggleFolderCardMenu(folderId, trigger) {
   if (!menu) return;
   menu.hidden = false;
   trigger.closest(".collection-card")?.classList.add("menu-open");
-  menu.querySelector("button")?.focus();
+  if (focusFirst) menu.querySelector("button")?.focus();
 }
 
 function renderLibraryMode() {
@@ -1118,6 +1118,7 @@ function renderFolders() {
         </button>
         <button class="collection-card-menu-trigger" data-folder-menu-trigger="${escapeHtml(folder.id)}" type="button" aria-label="More options for ${escapeHtml(folder.name)}" aria-haspopup="menu" aria-expanded="${menuOpen}"${AWS_CONFIGURED ? "" : " disabled"}><span aria-hidden="true">•••</span></button>
         <div class="collection-card-menu" data-folder-menu="${escapeHtml(folder.id)}" role="menu"${menuOpen ? "" : " hidden"}>
+          <div class="collection-card-menu-label"><span>Folder options</span><small>${escapeHtml(folder.name)}</small></div>
           <button data-folder-action="edit" data-folder-id="${escapeHtml(folder.id)}" type="button" role="menuitem"><span aria-hidden="true">✎</span><span>Edit name &amp; section</span></button>
           <button data-folder-action="image" data-folder-id="${escapeHtml(folder.id)}" type="button" role="menuitem"><span aria-hidden="true">▧</span><span>${folder.coverKey ? "Change image" : "Upload image"}</span></button>
           <div class="collection-card-menu-divider" role="separator"></div>
@@ -2330,7 +2331,7 @@ $("#folder-list").addEventListener("click", async (event) => {
   const menuTrigger = event.target.closest("[data-folder-menu-trigger]");
   if (menuTrigger) {
     event.stopPropagation();
-    return toggleFolderCardMenu(menuTrigger.dataset.folderMenuTrigger, menuTrigger);
+    return toggleFolderCardMenu(menuTrigger.dataset.folderMenuTrigger, menuTrigger, event.detail === 0);
   }
   const action = event.target.closest("[data-folder-action]");
   if (action) {
@@ -2359,6 +2360,20 @@ $("#folder-list").addEventListener("click", async (event) => {
   rememberFolder();
   renderFolders();
   await refreshAffirmations();
+});
+$("#folder-list").addEventListener("keydown", (event) => {
+  const menu = event.target.closest("[data-folder-menu]");
+  if (!menu || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+  const options = [...menu.querySelectorAll("button[role='menuitem']")];
+  if (!options.length) return;
+  event.preventDefault();
+  const current = options.indexOf(document.activeElement);
+  const next = event.key === "Home"
+    ? 0
+    : event.key === "End"
+      ? options.length - 1
+      : (current + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
+  options[next].focus();
 });
 $("#library-back").addEventListener("click", () => { stopLibraryPlayback(false); libraryDetailOpen = false; playerAffirmationId = null; renderLibraryMode(); renderPlayerPanel(); });
 $("#new-folder").addEventListener("click", () => $("#folder-dialog").showModal());
