@@ -11,7 +11,7 @@ Internal frontend for generating affirmation audio with the OmniVoice model host
 - Modal audio generation
 - MP3 generation, preview, download, and persistent ordering
 - Multiple voice versions for one ordered affirmation folder
-- Library sections and AWS-backed folder cover images
+- Library sections plus AWS-backed folder editing, cover images, and deletion
 - Responsive internal-tool interface inspired by Gratitude's calm visual language
 
 The first recording creates the affirmation. **Add another voice** reuses that

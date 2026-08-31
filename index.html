@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Newsreader:opsz,wght@6..72,500;6..72,600&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=library-sections-2">
+  <link rel="stylesheet" href="./styles.css?v=folder-actions-3">
 </head>
 <body>
   <div class="ambient-shape shape-one" aria-hidden="true"></div>
@@ -136,7 +136,7 @@
                     </div>
                   </div>
                   <button class="secondary-button compact save-order-button" id="save-order" type="button" hidden>Save changes to AWS</button>
-                  <button class="secondary-button compact folder-customize-button" id="folder-customize" type="button" disabled><span aria-hidden="true">▣</span> Cover &amp; section</button>
+                  <button class="secondary-button compact folder-customize-button" id="folder-customize" type="button" disabled><span aria-hidden="true">✎</span> Edit folder</button>
                   <button class="primary-button compact" id="add-to-folder" type="button" disabled>Add affirmation <span aria-hidden="true">＋</span></button>
                 </div>
               </div>
@@ -283,9 +283,10 @@
   <dialog class="folder-customize-dialog" id="folder-customize-dialog">
     <form class="dialog-card folder-customize-card" id="folder-customize-form">
       <div class="dialog-heading">
-        <div><span class="eyebrow">Folder appearance</span><h3>Cover and section</h3><p>Organise this folder and add a cover image to your shared AWS library.</p></div>
+        <div><span class="eyebrow">Folder settings</span><h3>Edit folder</h3><p>Update the name, section, or cover image in your shared AWS library.</p></div>
         <button class="icon-button" data-close-dialog type="button" aria-label="Close">×</button>
       </div>
+      <label class="field"><span class="input-label">Folder name</span><input id="folder-customize-name" maxlength="60" required placeholder="Example: Morning confidence"></label>
       <div class="folder-cover-editor">
         <div class="folder-cover-preview" id="folder-cover-preview" aria-hidden="true"><span>G</span></div>
         <div class="folder-cover-upload-copy">
@@ -300,6 +301,22 @@
       <p class="folder-customize-status" id="folder-customize-status" role="status"></p>
       <p class="form-error" id="folder-customize-error" role="alert"></p>
       <div class="dialog-actions"><button class="secondary-button" data-close-dialog type="button">Cancel</button><button class="primary-button" id="save-folder-customize" type="submit">Save changes</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="delete-folder-dialog">
+    <form class="dialog-card" id="delete-folder-form">
+      <div class="dialog-heading">
+        <div><span class="eyebrow danger-eyebrow">Permanent action</span><h3>Delete folder?</h3></div>
+        <button class="icon-button" data-close-dialog type="button" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy" id="delete-folder-description"></p>
+      <div class="delete-folder-warning"><span aria-hidden="true">!</span><p>This removes the folder, its cover image, and every saved affirmation recording inside it from AWS. This cannot be undone.</p></div>
+      <p class="form-error" id="delete-folder-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button class="secondary-button" data-close-dialog type="button">Keep folder</button>
+        <button class="danger-button" id="confirm-delete-folder" type="submit">Delete folder</button>
+      </div>
     </form>
   </dialog>
 
@@ -487,6 +504,6 @@
     </form>
   </dialog>
 
-  <script src="./app.js?v=library-sections-2"></script>
+  <script src="./app.js?v=folder-actions-3"></script>
 </body>
 </html>

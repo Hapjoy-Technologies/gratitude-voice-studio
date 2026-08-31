@@ -107,6 +107,11 @@ let voiceCloneSaving = false;
 let folderCoverPreviewUrl = null;
 let folderCoverRemoveRequested = false;
 let folderCustomizeBusy = false;
+let folderCustomizeId = null;
+let openFolderMenuId = null;
+let folderMenuLastTrigger = null;
+let folderDeleteId = null;
+let folderDeleteBusy = false;
 
 function loadLocalFolders() {
   try {
@@ -285,6 +290,29 @@ function applyFolderCover(element, folder, {withPlay = true} = {}) {
   element.setAttribute("style", folderCoverStyle(folder));
   element.classList.toggle("has-cover-image", Boolean(folder?.coverUrl));
   element.innerHTML = folderCoverContent(folder, {withPlay});
+}
+
+function closeFolderCardMenus(focusTrigger = false) {
+  openFolderMenuId = null;
+  $$("[data-folder-menu]").forEach((menu) => { menu.hidden = true; });
+  $$("[data-folder-menu-trigger]").forEach((trigger) => trigger.setAttribute("aria-expanded", "false"));
+  $$(".collection-card.menu-open").forEach((card) => card.classList.remove("menu-open"));
+  if (focusTrigger && folderMenuLastTrigger?.isConnected) folderMenuLastTrigger.focus();
+  if (!focusTrigger) folderMenuLastTrigger = null;
+}
+
+function toggleFolderCardMenu(folderId, trigger) {
+  const opening = openFolderMenuId !== folderId;
+  closeFolderCardMenus(false);
+  if (!opening) return;
+  openFolderMenuId = folderId;
+  folderMenuLastTrigger = trigger;
+  trigger.setAttribute("aria-expanded", "true");
+  const menu = document.querySelector(`[data-folder-menu="${CSS.escape(folderId)}"]`);
+  if (!menu) return;
+  menu.hidden = false;
+  trigger.closest(".collection-card")?.classList.add("menu-open");
+  menu.querySelector("button")?.focus();
 }
 
 function renderLibraryMode() {
@@ -1082,7 +1110,20 @@ function renderFolders() {
       const subtitle = count === null
         ? "Open affirmation collection"
         : `${count} affirmation${count === 1 ? "" : "s"}`;
-      return `<button class="collection-card" data-folder="${escapeHtml(folder.id)}" type="button" aria-label="Open ${escapeHtml(folder.name)}"><span class="collection-card-art${folder.coverUrl ? " has-cover-image" : ""}" style="${folderCoverStyle(folder)}">${folderCoverContent(folder)}</span><span class="collection-card-copy"><strong>${escapeHtml(folder.name)}</strong><small>${escapeHtml(subtitle)}</small></span></button>`;
+      const menuOpen = openFolderMenuId === folder.id;
+      return `<article class="collection-card${menuOpen ? " menu-open" : ""}">
+        <button class="collection-card-open" data-folder="${escapeHtml(folder.id)}" type="button" aria-label="Open ${escapeHtml(folder.name)}">
+          <span class="collection-card-art${folder.coverUrl ? " has-cover-image" : ""}" style="${folderCoverStyle(folder)}">${folderCoverContent(folder)}</span>
+          <span class="collection-card-copy"><strong>${escapeHtml(folder.name)}</strong><small>${escapeHtml(subtitle)}</small></span>
+        </button>
+        <button class="collection-card-menu-trigger" data-folder-menu-trigger="${escapeHtml(folder.id)}" type="button" aria-label="More options for ${escapeHtml(folder.name)}" aria-haspopup="menu" aria-expanded="${menuOpen}"${AWS_CONFIGURED ? "" : " disabled"}><span aria-hidden="true">•••</span></button>
+        <div class="collection-card-menu" data-folder-menu="${escapeHtml(folder.id)}" role="menu"${menuOpen ? "" : " hidden"}>
+          <button data-folder-action="edit" data-folder-id="${escapeHtml(folder.id)}" type="button" role="menuitem"><span aria-hidden="true">✎</span><span>Edit name &amp; section</span></button>
+          <button data-folder-action="image" data-folder-id="${escapeHtml(folder.id)}" type="button" role="menuitem"><span aria-hidden="true">▧</span><span>${folder.coverKey ? "Change image" : "Upload image"}</span></button>
+          <div class="collection-card-menu-divider" role="separator"></div>
+          <button class="danger" data-folder-action="delete" data-folder-id="${escapeHtml(folder.id)}" type="button" role="menuitem"><span aria-hidden="true">×</span><span>Delete folder</span></button>
+        </div>
+      </article>`;
       }).join("");
       return `<section class="collection-section"><div class="collection-section-heading"><h4>${escapeHtml(section)}</h4><span>${sectionFolders.length} folder${sectionFolders.length === 1 ? "" : "s"}</span></div><div class="collection-grid">${cards}</div></section>`;
     }).join("");
@@ -1315,22 +1356,26 @@ function renderFolderCoverPreview(folder, imageUrl = folder?.coverUrl || "") {
     : `<span>${escapeHtml(folderMark(folder))}</span>`;
 }
 
-function openFolderCustomizeDialog() {
-  const folder = folders.find((item) => item.id === selectedFolderId);
+function openFolderCustomizeDialog(folderId = selectedFolderId, focusTarget = "name") {
+  const folder = folders.find((item) => item.id === folderId);
   if (!AWS_CONFIGURED || !folder || folderCustomizeBusy) return;
+  folderCustomizeId = folder.id;
   releaseFolderCoverPreview();
   folderCoverRemoveRequested = false;
   $("#folder-cover-file").value = "";
+  $("#folder-customize-name").value = folder.name || "";
   $("#folder-customize-section").value = folder.section || "";
   $("#folder-customize-status").textContent = "";
   $("#folder-customize-error").textContent = "";
   $("#remove-folder-cover").hidden = !folder.coverKey;
   renderFolderCoverPreview(folder);
   $("#folder-customize-dialog").showModal();
+  if (focusTarget === "image") $("#folder-cover-file").click();
+  else requestAnimationFrame(() => $("#folder-customize-name").focus());
 }
 
 function previewFolderCoverFile(file) {
-  const folder = folders.find((item) => item.id === selectedFolderId);
+  const folder = folders.find((item) => item.id === folderCustomizeId);
   $("#folder-customize-error").textContent = "";
   if (!file || !folder) return renderFolderCoverPreview(folder);
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
@@ -1351,7 +1396,7 @@ function previewFolderCoverFile(file) {
 }
 
 function removeFolderCoverSelection() {
-  const folder = folders.find((item) => item.id === selectedFolderId);
+  const folder = folders.find((item) => item.id === folderCustomizeId);
   releaseFolderCoverPreview();
   folderCoverRemoveRequested = true;
   $("#folder-cover-file").value = "";
@@ -1363,12 +1408,13 @@ function removeFolderCoverSelection() {
 
 async function saveFolderCustomization(event) {
   event.preventDefault();
-  const folder = folders.find((item) => item.id === selectedFolderId);
+  const folder = folders.find((item) => item.id === folderCustomizeId);
   if (!AWS_CONFIGURED || !folder || folderCustomizeBusy) return;
   const file = $("#folder-cover-file").files[0];
+  const name = $("#folder-customize-name").value.trim();
   const section = $("#folder-customize-section").value.trim();
   const button = $("#save-folder-customize");
-  const update = {section};
+  const update = {name, section};
   folderCustomizeBusy = true;
   button.disabled = true;
   $("#folder-customize-error").textContent = "";
@@ -1398,15 +1444,69 @@ async function saveFolderCustomization(event) {
     folders = folders.map((item) => item.id === folder.id ? result.folder : item);
     releaseFolderCoverPreview();
     folderCoverRemoveRequested = false;
+    folderCustomizeId = null;
     $("#folder-customize-dialog").close();
     renderFolders();
-    $("#library-status").textContent = "Folder cover and section saved in AWS.";
+    $("#library-status").textContent = "Folder details saved in AWS.";
   } catch (error) {
     $("#folder-customize-error").textContent = error.message || "Could not update this folder.";
     $("#folder-customize-status").textContent = "";
   } finally {
     folderCustomizeBusy = false;
     button.disabled = false;
+  }
+}
+
+function openDeleteFolderDialog(folderId) {
+  const folder = folders.find((item) => item.id === folderId);
+  if (!AWS_CONFIGURED || !folder || folderDeleteBusy) return;
+  folderDeleteId = folder.id;
+  $("#delete-folder-description").textContent = `Delete “${folder.name}” and all of its saved audio?`;
+  $("#delete-folder-error").textContent = "";
+  $("#confirm-delete-folder").disabled = false;
+  $("#confirm-delete-folder").textContent = "Delete folder";
+  $("#delete-folder-dialog").showModal();
+}
+
+async function deleteFolder(event) {
+  event.preventDefault();
+  const folder = folders.find((item) => item.id === folderDeleteId);
+  if (!AWS_CONFIGURED || !folder || folderDeleteBusy) return;
+  const button = $("#confirm-delete-folder");
+  folderDeleteBusy = true;
+  button.disabled = true;
+  button.textContent = "Deleting…";
+  $("#delete-folder-error").textContent = "";
+  try {
+    await awsApi(`/folders/${encodeURIComponent(folder.id)}`, {method: "DELETE"});
+    [FOLDER_VOICE_STORAGE_KEY, BACKGROUND_MUSIC_STORAGE_KEY, PLAY_ALL_PAUSE_STORAGE_KEY].forEach((storageKey) => {
+      try {
+        const preferences = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        delete preferences[folder.id];
+        localStorage.setItem(storageKey, JSON.stringify(preferences));
+      } catch (_error) {
+        localStorage.removeItem(storageKey);
+      }
+    });
+    if (selectedFolderId === folder.id) {
+      stopLibraryPlayback(false);
+      selectedFolderId = null;
+      selectedFolderVoiceId = null;
+      affirmations = [];
+      libraryDetailOpen = false;
+      playerAffirmationId = null;
+      localStorage.removeItem(LAST_FOLDER_KEY);
+    }
+    folders = folders.filter((item) => item.id !== folder.id);
+    folderDeleteId = null;
+    $("#delete-folder-dialog").close();
+    renderFolders();
+  } catch (error) {
+    $("#delete-folder-error").textContent = error.message || "Could not delete this folder.";
+  } finally {
+    folderDeleteBusy = false;
+    button.disabled = false;
+    button.textContent = "Delete folder";
   }
 }
 
@@ -2226,14 +2326,48 @@ $$('[data-view], [data-view-link]').forEach((element) => element.addEventListene
   }
   showView(view);
 }));
-$("#folder-list").addEventListener("click", async (event) => { const button = event.target.closest("[data-folder]"); if (!button) return; closeFolderVoiceMenu(); closePlayAllPauseMenu(); stopLibraryPlayback(false); orderChanged = false; libraryDetailOpen = true; playerAffirmationId = null; playerActiveWord = -1; selectedFolderId = button.dataset.folder; selectedFolderVoiceId = loadFolderVoicePreferences()[selectedFolderId] || null; restoreBackgroundMusicPreference(); restorePlayAllPausePreference(); rememberFolder(); renderFolders(); await refreshAffirmations(); });
+$("#folder-list").addEventListener("click", async (event) => {
+  const menuTrigger = event.target.closest("[data-folder-menu-trigger]");
+  if (menuTrigger) {
+    event.stopPropagation();
+    return toggleFolderCardMenu(menuTrigger.dataset.folderMenuTrigger, menuTrigger);
+  }
+  const action = event.target.closest("[data-folder-action]");
+  if (action) {
+    event.stopPropagation();
+    const folderId = action.dataset.folderId;
+    const actionName = action.dataset.folderAction;
+    closeFolderCardMenus(false);
+    if (actionName === "edit") return openFolderCustomizeDialog(folderId, "name");
+    if (actionName === "image") return openFolderCustomizeDialog(folderId, "image");
+    if (actionName === "delete") return openDeleteFolderDialog(folderId);
+  }
+  const button = event.target.closest("[data-folder]");
+  if (!button) return;
+  closeFolderCardMenus(false);
+  closeFolderVoiceMenu();
+  closePlayAllPauseMenu();
+  stopLibraryPlayback(false);
+  orderChanged = false;
+  libraryDetailOpen = true;
+  playerAffirmationId = null;
+  playerActiveWord = -1;
+  selectedFolderId = button.dataset.folder;
+  selectedFolderVoiceId = loadFolderVoicePreferences()[selectedFolderId] || null;
+  restoreBackgroundMusicPreference();
+  restorePlayAllPausePreference();
+  rememberFolder();
+  renderFolders();
+  await refreshAffirmations();
+});
 $("#library-back").addEventListener("click", () => { stopLibraryPlayback(false); libraryDetailOpen = false; playerAffirmationId = null; renderLibraryMode(); renderPlayerPanel(); });
 $("#new-folder").addEventListener("click", () => $("#folder-dialog").showModal());
 $("#folder-form").addEventListener("submit", async (event) => { event.preventDefault(); const button = event.submitter; button.disabled = true; $("#folder-error").textContent = ""; try { await createFolder($("#folder-name").value, $("#folder-section").value); event.target.reset(); $("#folder-dialog").close(); } catch (error) { $("#folder-error").textContent = error.message; } finally { button.disabled = false; } });
-$("#folder-customize").addEventListener("click", openFolderCustomizeDialog);
+$("#folder-customize").addEventListener("click", () => openFolderCustomizeDialog(selectedFolderId, "name"));
 $("#folder-cover-file").addEventListener("change", (event) => previewFolderCoverFile(event.target.files[0]));
 $("#remove-folder-cover").addEventListener("click", removeFolderCoverSelection);
 $("#folder-customize-form").addEventListener("submit", saveFolderCustomization);
+$("#delete-folder-form").addEventListener("submit", deleteFolder);
 $("#new-affirmation").addEventListener("click", () => { if (!folders.length) return $("#folder-dialog").showModal(); showView("generate"); });
 $("#add-to-folder").addEventListener("click", () => { if (!selectedFolderId) return; showView("generate"); });
 $("#play-all").addEventListener("click", togglePlayAll);
@@ -2300,11 +2434,13 @@ $("#folder-voice-options").addEventListener("keydown", (event) => {
   options[next].focus();
 });
 document.addEventListener("click", (event) => {
+  if (!event.target.closest(".collection-card")) closeFolderCardMenus(false);
   if (!event.target.closest("#folder-voice-picker")) closeFolderVoiceMenu();
   if (!event.target.closest("#play-all-pause-picker")) closePlayAllPauseMenu();
 });
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
+  if (openFolderMenuId) closeFolderCardMenus(true);
   if (!$("#folder-voice-menu").hidden) closeFolderVoiceMenu(true);
   if (!$("#play-all-pause-menu").hidden) closePlayAllPauseMenu(true);
 });
@@ -2344,6 +2480,7 @@ $$('[data-close-dialog]').forEach((button) => button.addEventListener("click", (
     clearFolderVoiceBatch();
   }
   if (dialog.id === "delete-folder-voice-dialog" && folderVoiceDeleteBusy) return;
+  if (dialog.id === "delete-folder-dialog" && folderDeleteBusy) return;
   if (dialog.id === "music-dialog") {
     if (musicUploadBusy || musicDeleteBusyId) return;
     stopMusicPreview(false);
@@ -2356,7 +2493,9 @@ $$('[data-close-dialog]').forEach((button) => button.addEventListener("click", (
     if (folderCustomizeBusy) return;
     releaseFolderCoverPreview();
     folderCoverRemoveRequested = false;
+    folderCustomizeId = null;
   }
+  if (dialog.id === "delete-folder-dialog") folderDeleteId = null;
   dialog.close();
 }));
 $("#folder-voice-dialog").addEventListener("cancel", (event) => {
@@ -2366,10 +2505,15 @@ $("#folder-voice-dialog").addEventListener("cancel", (event) => {
 $("#delete-folder-voice-dialog").addEventListener("cancel", (event) => {
   if (folderVoiceDeleteBusy) event.preventDefault();
 });
+$("#delete-folder-dialog").addEventListener("cancel", (event) => {
+  if (folderDeleteBusy) return event.preventDefault();
+  folderDeleteId = null;
+});
 $("#folder-customize-dialog").addEventListener("cancel", (event) => {
   if (folderCustomizeBusy) return event.preventDefault();
   releaseFolderCoverPreview();
   folderCoverRemoveRequested = false;
+  folderCustomizeId = null;
 });
 $("#music-dialog").addEventListener("cancel", (event) => {
   if (musicUploadBusy || musicDeleteBusyId) return event.preventDefault();
