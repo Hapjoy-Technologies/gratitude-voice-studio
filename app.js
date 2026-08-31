@@ -1116,13 +1116,16 @@ function renderFolders() {
           <span class="collection-card-art${folder.coverUrl ? " has-cover-image" : ""}" style="${folderCoverStyle(folder)}">${folderCoverContent(folder)}</span>
           <span class="collection-card-copy"><strong>${escapeHtml(folder.name)}</strong><small>${escapeHtml(subtitle)}</small></span>
         </button>
-        <button class="collection-card-menu-trigger" data-folder-menu-trigger="${escapeHtml(folder.id)}" type="button" aria-label="More options for ${escapeHtml(folder.name)}" aria-haspopup="menu" aria-expanded="${menuOpen}"${AWS_CONFIGURED ? "" : " disabled"}><span aria-hidden="true">•••</span></button>
+        <button class="collection-card-menu-trigger" data-folder-menu-trigger="${escapeHtml(folder.id)}" type="button" aria-label="More options for ${escapeHtml(folder.name)}" aria-haspopup="menu" aria-expanded="${menuOpen}"${AWS_CONFIGURED ? "" : " disabled"}><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="12" cy="19" r="1.8"></circle></svg></button>
         <div class="collection-card-menu" data-folder-menu="${escapeHtml(folder.id)}" role="menu"${menuOpen ? "" : " hidden"}>
-          <div class="collection-card-menu-label"><span>Folder options</span><small>${escapeHtml(folder.name)}</small></div>
-          <button data-folder-action="edit" data-folder-id="${escapeHtml(folder.id)}" type="button" role="menuitem"><span aria-hidden="true">✎</span><span>Edit name &amp; section</span></button>
-          <button data-folder-action="image" data-folder-id="${escapeHtml(folder.id)}" type="button" role="menuitem"><span aria-hidden="true">▧</span><span>${folder.coverKey ? "Change image" : "Upload image"}</span></button>
+          <div class="collection-card-menu-label">
+            <span class="collection-menu-cover${folder.coverUrl ? " has-cover-image" : ""}" style="${folderCoverStyle(folder)}">${folderCoverContent(folder, {withPlay: false})}</span>
+            <span class="collection-menu-heading"><strong>${escapeHtml(folder.name)}</strong><small>Manage folder</small></span>
+          </div>
+          <button data-folder-action="edit" data-folder-id="${escapeHtml(folder.id)}" type="button" role="menuitem"><span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20h4l10.4-10.4a2.1 2.1 0 0 0-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg></span><span>Edit name &amp; section</span></button>
+          <button data-folder-action="image" data-folder-id="${escapeHtml(folder.id)}" type="button" role="menuitem"><span aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"></rect><circle cx="9" cy="10" r="2"></circle><path d="m4 17 4.5-4 3.5 3 3-2.5 5 4.5"></path></svg></span><span>${folder.coverKey ? "Change image" : "Upload image"}</span></button>
           <div class="collection-card-menu-divider" role="separator"></div>
-          <button class="danger" data-folder-action="delete" data-folder-id="${escapeHtml(folder.id)}" type="button" role="menuitem"><span aria-hidden="true">×</span><span>Delete folder</span></button>
+          <button class="danger" data-folder-action="delete" data-folder-id="${escapeHtml(folder.id)}" type="button" role="menuitem"><span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16"></path><path d="M9 7V4h6v3"></path><path d="m7 7 1 13h8l1-13"></path><path d="M10 11v5M14 11v5"></path></svg></span><span>Delete folder</span></button>
         </div>
       </article>`;
       }).join("");
@@ -2330,11 +2333,13 @@ $$('[data-view], [data-view-link]').forEach((element) => element.addEventListene
 $("#folder-list").addEventListener("click", async (event) => {
   const menuTrigger = event.target.closest("[data-folder-menu-trigger]");
   if (menuTrigger) {
+    event.preventDefault();
     event.stopPropagation();
     return toggleFolderCardMenu(menuTrigger.dataset.folderMenuTrigger, menuTrigger, event.detail === 0);
   }
   const action = event.target.closest("[data-folder-action]");
   if (action) {
+    event.preventDefault();
     event.stopPropagation();
     const folderId = action.dataset.folderId;
     const actionName = action.dataset.folderAction;
