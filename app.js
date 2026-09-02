@@ -1,4 +1,4 @@
-const MODAL_BASE_URL = "https://diksangisomu215--omnivoice-web-studio-web-app.modal.run";
+const MODAL_BASE_URL = "https://pritesh--omnivoice-web-studio-web-app.modal.run";
 // Filled with the isolated GratitudeVoiceStudioApi Lambda Function URL at deploy time.
 const AWS_API_BASE_URL = "https://a6c42ttu3mqldnamijycyue27m0jgbae.lambda-url.us-east-1.on.aws";
 const AWS_CONFIGURED = !AWS_API_BASE_URL.startsWith("__");
