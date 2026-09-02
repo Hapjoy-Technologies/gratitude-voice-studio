@@ -1851,11 +1851,16 @@ function finishGenerationProgress(success) {
 }
 
 function updateSettings() {
+  const sentencePauseMs = Number($("#sentence-pause").value);
+  const sentencePauseLabel = sentencePauseMs
+    ? `${sentencePauseMs / 1000}s`
+    : "Natural";
   $("#speed-output").textContent = Number($("#speed").value).toFixed(2);
   $("#steps-output").textContent = $("#steps").value;
   $("#guidance-output").textContent = Number($("#guidance").value).toFixed(1);
   $("#gap-output").textContent = `${$("#word-gap").value} ms`;
-  $("#settings-summary").textContent = `${Number($("#speed").value).toFixed(2)} speed · ${$("#steps").value} steps`;
+  $("#sentence-pause-output").textContent = sentencePauseLabel;
+  $("#settings-summary").textContent = `${Number($("#speed").value).toFixed(2)} speed · ${$("#steps").value} steps${sentencePauseMs ? ` · ${sentencePauseLabel} sentence pause` : ""}`;
 }
 
 function showStatus(message, error = false) {
@@ -1875,6 +1880,7 @@ function voiceGenerationData(text, voiceId, referenceFile = null, consent = true
   data.set("num_step", $("#steps").value);
   data.set("guidance_scale", $("#guidance").value);
   data.set("word_pause_ms", $("#word-gap").value);
+  data.set("sentence_pause_ms", $("#sentence-pause").value);
   data.set("clear_pronunciation", String($("#clear-pronunciation").checked));
   data.set("denoise", String($("#denoise").checked));
   data.set("preprocess_prompt", String($("#preprocess").checked));
@@ -2473,7 +2479,15 @@ $("#affirmation-list").addEventListener("dragend", () => { draggedAffirmationId 
 $("#voice-grid").addEventListener("click", async (event) => { const preview = event.target.closest("[data-preview]"); const remove = event.target.closest("[data-delete-voice]"); if (preview) { event.stopPropagation(); return previewVoice(preview.dataset.preview, preview); } if (remove) { event.stopPropagation(); const voice = voices.find((item) => item.id === remove.dataset.deleteVoice); if (!voice || !confirm(`Delete voice “${voice.name}”? This cannot be undone.`)) return; try { await modalApi(`/api/voices/${encodeURIComponent(voice.id)}`, {method: "DELETE"}); await loadVoices(); } catch (error) { showStatus(error.message, true); } return; } const card = event.target.closest("[data-voice]"); if (card) { customMode = false; $("#custom-upload").hidden = true; selectedVoiceId = card.dataset.voice; renderVoices(); } });
 $("#toggle-custom").addEventListener("click", () => { customMode = !customMode; $("#custom-upload").hidden = !customMode; $("#toggle-custom").textContent = customMode ? "Use a saved voice instead" : "Use a one-time voice sample instead"; renderVoices(); });
 $("#custom-audio").addEventListener("change", (event) => { $("#custom-filename").textContent = event.target.files[0]?.name || ""; });
-[$("#speed"), $("#steps"), $("#guidance"), $("#word-gap")].forEach((input) => input.addEventListener("input", updateSettings));
+[$("#speed"), $("#steps"), $("#guidance")].forEach((input) => input.addEventListener("input", updateSettings));
+$("#word-gap").addEventListener("input", () => {
+  if (Number($("#word-gap").value) > 0) $("#sentence-pause").value = "0";
+  updateSettings();
+});
+$("#sentence-pause").addEventListener("input", () => {
+  if (Number($("#sentence-pause").value) > 0) $("#word-gap").value = "0";
+  updateSettings();
+});
 $("#generate-form").addEventListener("submit", generate);
 $("#confirm-save").addEventListener("click", confirmSave);
 $("#folder-voice-form").addEventListener("submit", generateFolderVoiceVersion);

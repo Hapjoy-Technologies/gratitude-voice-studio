@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Newsreader:opsz,wght@6..72,500;6..72,600&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=premium-folder-menu-5">
+  <link rel="stylesheet" href="./styles.css?v=sentence-pause-1">
 </head>
 <body>
   <div class="ambient-shape shape-one" aria-hidden="true"></div>
@@ -234,6 +234,17 @@
                 <label class="range-field">Clarity <output id="steps-output">64</output><input id="steps" type="range" min="4" max="64" step="4" value="64"></label>
                 <label class="range-field">Expression <output id="guidance-output">2.0</output><input id="guidance" type="range" min="0" max="4" step="0.1" value="2"></label>
                 <label class="range-field">Word spacing <output id="gap-output">0 ms</output><input id="word-gap" type="range" min="0" max="1000" step="50" value="0"></label>
+                <label class="range-field sentence-pause-field">Pause after each sentence <output id="sentence-pause-output">Natural</output>
+                  <select id="sentence-pause" aria-describedby="sentence-pause-help">
+                    <option value="0">Natural</option>
+                    <option value="500">0.5 seconds</option>
+                    <option value="1000">1 second</option>
+                    <option value="2000">2 seconds</option>
+                    <option value="3000">3 seconds</option>
+                    <option value="5000">5 seconds</option>
+                  </select>
+                  <small id="sentence-pause-help">Adds exact silence after every full stop, question mark, or exclamation mark in long scripts.</small>
+                </label>
               </div>
               <div class="toggle-grid">
                 <label><input id="clear-pronunciation" type="checkbox" checked> Clear words</label>
@@ -503,6 +514,6 @@
     </form>
   </dialog>
 
-  <script src="./app.js?v=premium-folder-menu-5"></script>
+  <script src="./app.js?v=sentence-pause-1"></script>
 </body>
 </html>

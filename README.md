@@ -9,6 +9,7 @@ Internal frontend for generating affirmation audio with the OmniVoice model host
 - Shared folder and audio drafts in the isolated `affn-audios/dev/` prefix
 - Prebuilt and custom voice selection
 - Modal audio generation
+- Configurable sentence pauses for long-form YouTube scripts
 - MP3 generation, preview, download, and persistent ordering
 - Multiple voice versions for one ordered affirmation folder
 - Library sections plus AWS-backed folder editing, cover images, and deletion

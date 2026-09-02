@@ -235,6 +235,9 @@ input:focus, select:focus, textarea:focus { border-color: rgba(104, 76, 114, .68
 .range-field { display: grid; grid-template-columns: 1fr auto; gap: 6px; color: var(--ink-soft); font-size: 9px; font-weight: 650; }
 .range-field input { grid-column: 1 / -1; min-height: 5px; padding: 0; accent-color: var(--plum); }
 .range-field output { color: var(--plum); }
+.sentence-pause-field { grid-column: 1 / -1; }
+.sentence-pause-field select { grid-column: 1 / -1; min-height: 42px; }
+.sentence-pause-field small { grid-column: 1 / -1; color: var(--muted); font-size: 8px; font-weight: 450; line-height: 1.45; }
 .toggle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 0 15px 15px; }
 .toggle-grid label { display: flex; align-items: center; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: rgba(255, 253, 250, .74); font-size: 8px; }
 .toggle-grid input { width: auto; min-height: 0; accent-color: var(--plum); }
