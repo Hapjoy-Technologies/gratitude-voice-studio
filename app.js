@@ -228,12 +228,21 @@ function folderVoiceAvailability() {
     itemVoiceVersions(item).forEach((voice) => {
       if (!voice.voiceId || seen.has(voice.voiceId)) return;
       seen.add(voice.voiceId);
-      const current = available.get(voice.voiceId) || {id: voice.voiceId, name: voice.voiceName || "Voice", count: 0};
+      const current = available.get(voice.voiceId) || {
+        id: voice.voiceId,
+        name: voice.voiceName || "Voice",
+        count: 0,
+        imageUrl: voice.imageUrl || "",
+        order: Number.isInteger(voice.order) ? voice.order : 999,
+        readOnly: Boolean(voice.readOnly),
+        source: voice.source || "",
+      };
       current.count += 1;
+      current.readOnly = current.readOnly && Boolean(voice.readOnly);
       available.set(voice.voiceId, current);
     });
   });
-  return [...available.values()].sort((left, right) => left.name.localeCompare(right.name));
+  return [...available.values()].sort((left, right) => left.order - right.order || left.name.localeCompare(right.name));
 }
 
 function completeFolderVoices() {
@@ -1148,7 +1157,7 @@ function renderFolders() {
           : null;
       const subtitle = count === null
         ? "Open affirmation collection"
-        : `${count} affirmation${count === 1 ? "" : "s"}${folder.source === STAGING_CATALOG_SOURCE ? " · v3 staging" : ""}`;
+        : `${count} affirmation${count === 1 ? "" : "s"}${folder.source === STAGING_CATALOG_SOURCE ? ` · ${folder.existingVoiceCount || 0} existing voice${folder.existingVoiceCount === 1 ? "" : "s"}` : ""}`;
       const managedByStaging = folder.source === STAGING_CATALOG_SOURCE;
       const menuOpen = !managedByStaging && openFolderMenuId === folder.id;
       const managementMenu = managedByStaging ? "" : `
@@ -1215,7 +1224,7 @@ function renderFolderVoicePicker() {
   }
   if (!complete.some((voice) => voice.id === selectedFolderVoiceId)) ensureSelectedFolderVoice();
   const selected = complete.find((voice) => voice.id === selectedFolderVoiceId) || complete[0];
-  const selectedImage = voiceImageUrl(selected?.id);
+  const selectedImage = selected?.imageUrl || voiceImageUrl(selected?.id);
   avatar.innerHTML = selectedImage
     ? `<img src="${escapeHtml(selectedImage)}" alt="">`
     : escapeHtml(selected.name.slice(0, 1).toUpperCase());
@@ -1223,15 +1232,18 @@ function renderFolderVoicePicker() {
   trigger.setAttribute("aria-label", `Voice: ${selected.name}`);
   options.innerHTML = complete.map((voice) => {
     const isSelected = voice.id === selected.id;
-    const removeDisabled = !AWS_CONFIGURED || complete.length < 2 || folderVoiceDeleteBusy;
-    const removeTitle = complete.length < 2
-      ? "Add another complete voice before removing this one"
-      : `Remove ${voice.name} from this folder`;
-    const image = voiceImageUrl(voice.id);
+    const removeDisabled = voice.readOnly || !AWS_CONFIGURED || complete.length < 2 || folderVoiceDeleteBusy;
+    const removeTitle = voice.readOnly
+      ? "Existing v3 audio is read-only"
+      : complete.length < 2
+        ? "Add another complete voice before removing this one"
+        : `Remove ${voice.name} from this folder`;
+    const image = voice.imageUrl || voiceImageUrl(voice.id);
     const portrait = image
       ? `<img src="${escapeHtml(image)}" alt="">`
       : escapeHtml(voice.name.slice(0, 1).toUpperCase());
-    return `<div class="folder-voice-option-row${isSelected ? " selected" : ""}"><button class="folder-voice-inline-remove" data-folder-voice-remove="${escapeHtml(voice.id)}" type="button" aria-label="Remove ${escapeHtml(voice.name)}" title="${escapeHtml(removeTitle)}"${removeDisabled ? " disabled" : ""}>×</button><button class="folder-voice-option${isSelected ? " selected" : ""}" data-folder-voice-option="${escapeHtml(voice.id)}" type="button" role="option" aria-selected="${isSelected}"><span class="folder-voice-option-avatar" aria-hidden="true">${portrait}</span><span class="folder-voice-option-copy"><strong>${escapeHtml(voice.name)}</strong><small>${voice.count} recording${voice.count === 1 ? "" : "s"}</small></span><span class="folder-voice-option-check" aria-hidden="true">✓</span></button></div>`;
+    const sourceLabel = voice.readOnly ? " · existing v3 audio" : " · AWS dev";
+    return `<div class="folder-voice-option-row${isSelected ? " selected" : ""}"><button class="folder-voice-inline-remove" data-folder-voice-remove="${escapeHtml(voice.id)}" type="button" aria-label="Remove ${escapeHtml(voice.name)}" title="${escapeHtml(removeTitle)}"${removeDisabled ? " disabled" : ""}>×</button><button class="folder-voice-option${isSelected ? " selected" : ""}" data-folder-voice-option="${escapeHtml(voice.id)}" type="button" role="option" aria-selected="${isSelected}"><span class="folder-voice-option-avatar" aria-hidden="true">${portrait}</span><span class="folder-voice-option-copy"><strong>${escapeHtml(voice.name)}</strong><small>${voice.count} recording${voice.count === 1 ? "" : "s"}${escapeHtml(sourceLabel)}</small></span><span class="folder-voice-option-check" aria-hidden="true">✓</span></button></div>`;
   }).join("");
 }
 
@@ -1266,6 +1278,10 @@ function openDeleteFolderVoiceDialog() {
   const complete = completeFolderVoices();
   const selected = complete.find((voice) => voice.id === selectedFolderVoiceId);
   const remaining = complete.filter((voice) => voice.id !== selectedFolderVoiceId);
+  if (selected?.readOnly) {
+    $("#library-status").textContent = "Existing v3 audio is read-only and cannot be removed here.";
+    return;
+  }
   if (!folder || !selected || !remaining.length) {
     $("#library-status").textContent = "Add another complete voice before removing this one.";
     return;
@@ -1359,11 +1375,17 @@ function renderAffirmations(loading = false, error = "") {
       const download = voice?.audioUrl
         ? `<a href="${escapeHtml(voice.audioUrl)}" download="affirmation-${item.identifier}-${escapeHtml(voice.voiceId)}.mp3" title="Download ${escapeHtml(voiceName)}">⇩</a>`
         : "";
-      const voiceImage = voiceImageUrl(voice?.voiceId);
+      const voiceImage = voice?.imageUrl || voiceImageUrl(voice?.voiceId);
       const voiceLabel = voiceImage
         ? `<span class="affirmation-voice"><img src="${escapeHtml(voiceImage)}" alt="">${escapeHtml(voiceName)}</span>`
         : `<span>${escapeHtml(voiceName)}</span>`;
-      const savedLabel = item.local ? "Browser preview" : voice ? "Saved in AWS" : "Loaded from v3 staging";
+      const savedLabel = item.local
+        ? "Browser preview"
+        : voice?.readOnly
+          ? "Existing v3 audio"
+          : voice
+            ? "Saved in AWS dev"
+            : "Loaded from v3 staging";
       const savedDate = createdAt ? new Date(createdAt).toLocaleDateString() : "";
       const reorderControls = managedByStaging ? '<span aria-hidden="true"></span>' : `<span class="drag-handle" data-drag-id="${escapeHtml(item.identifier)}" draggable="true" aria-hidden="true" title="Drag to reorder">⋮⋮</span>`;
       const moveControls = managedByStaging ? "" : `<button data-move-id="${escapeHtml(item.identifier)}" data-direction="-1" type="button" aria-label="Move affirmation up" title="Move up"${index === 0 ? " disabled" : ""}>↑</button><button data-move-id="${escapeHtml(item.identifier)}" data-direction="1" type="button" aria-label="Move affirmation down" title="Move down"${index === affirmations.length - 1 ? " disabled" : ""}>↓</button>`;
