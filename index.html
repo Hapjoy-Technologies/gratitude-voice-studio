@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Newsreader:opsz,wght@6..72,500;6..72,600&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=sentence-pause-1">
+  <link rel="stylesheet" href="./styles.css?v=multi-voice-picker-1">
 </head>
 <body>
   <div class="ambient-shape shape-one" aria-hidden="true"></div>
@@ -406,17 +406,11 @@
         <button class="icon-button" data-close-dialog type="button" aria-label="Close">×</button>
       </div>
       <p class="dialog-copy" id="folder-voice-description"></p>
-      <div class="folder-voice-step"><span>1</span><div><strong>Choose the new voice</strong><small>Your existing texts and order remain exactly the same.</small></div></div>
-      <div class="voice-select-row">
-        <label class="field">
-          <span class="input-label">Voice to add</span>
-          <select id="folder-new-voice" required></select>
-        </label>
-        <button class="secondary-button voice-preview-button" id="preview-folder-voice" type="button"><span aria-hidden="true">▶</span> Preview voice</button>
-      </div>
+      <div class="folder-voice-step"><span>1</span><div><strong>Choose one or more voices</strong><small>Tick every voice you want to generate. Your existing texts and order remain exactly the same.</small></div></div>
+      <div class="folder-new-voice-list" id="folder-new-voices" role="group" aria-label="Voices to generate"></div>
       <div class="selected-voice-summary" id="selected-folder-voice-summary">
         <span class="voice-avatar" id="selected-folder-voice-avatar">—</span>
-        <span><strong id="selected-folder-voice-name">Choose a voice</strong><small id="selected-folder-voice-style">Select a voice above</small></span>
+        <span><strong id="selected-folder-voice-name">Choose one or more voices</strong><small id="selected-folder-voice-style">Tick the voices you want above</small></span>
         <span class="recording-count" id="folder-recording-count">0 recordings</span>
       </div>
       <div class="voice-version-note">
@@ -514,6 +508,6 @@
     </form>
   </dialog>
 
-  <script src="./app.js?v=v3-existing-audio-1"></script>
+  <script src="./app.js?v=multi-voice-picker-1"></script>
 </body>
 </html>
