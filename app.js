@@ -112,6 +112,8 @@ let openFolderMenuId = null;
 let folderMenuLastTrigger = null;
 let folderDeleteId = null;
 let folderDeleteBusy = false;
+let folderSearchQuery = "";
+let folderSortMode = "default";
 
 function loadLocalFolders() {
   try {
@@ -1090,23 +1092,44 @@ function clearDropIndicators() {
 function renderFolders() {
   if (selectedFolderId && !folders.some((folder) => folder.id === selectedFolderId)) selectedFolderId = folders[0]?.id || null;
   const list = $("#folder-list");
+  const total = folders.length;
+  const normalizedQuery = folderSearchQuery.trim().toLocaleLowerCase();
+  const folderCount = (folder) => {
+    const storedCount = Number(folder.affirmationCount ?? folder.recordingCount ?? folder.count);
+    return Number.isFinite(storedCount) && storedCount >= 0
+      ? storedCount
+      : folder.id === selectedFolderId
+        ? affirmations.length
+        : null;
+  };
+  const visibleFolders = folders.filter((folder) => {
+    if (!normalizedQuery) return true;
+    return `${folder.name || ""} ${folderSectionName(folder)}`.toLocaleLowerCase().includes(normalizedQuery);
+  });
+  if (folderSortMode === "name") {
+    visibleFolders.sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""), undefined, {sensitivity: "base"}));
+  } else if (folderSortMode === "count") {
+    visibleFolders.sort((left, right) => (folderCount(right) ?? -1) - (folderCount(left) ?? -1) || String(left.name || "").localeCompare(String(right.name || "")));
+  }
+  $("#folder-total").textContent = `${total} folder${total === 1 ? "" : "s"}`;
+  $("#folder-result-count").textContent = normalizedQuery ? `${visibleFolders.length} of ${total}` : "";
+  $("#folder-search-clear").hidden = !normalizedQuery;
+  $("#folder-sort").value = folderSortMode;
+  $("#collection-browser").classList.toggle("is-empty", !total);
   if (!folders.length) {
     list.innerHTML = '<div class="empty-state small">No collections yet.<br>Create your first affirmation folder.</div>';
+  } else if (!visibleFolders.length) {
+    list.innerHTML = `<div class="collection-empty-search"><span aria-hidden="true">⌕</span><strong>No collections found</strong><small>Try another name or section.</small><button data-clear-folder-search type="button">Clear search</button></div>`;
   } else {
     const groups = new Map();
-    folders.forEach((folder) => {
+    visibleFolders.forEach((folder) => {
       const section = folderSectionName(folder);
       if (!groups.has(section)) groups.set(section, []);
       groups.get(section).push(folder);
     });
     list.innerHTML = [...groups.entries()].map(([section, sectionFolders]) => {
       const cards = sectionFolders.map((folder) => {
-      const storedCount = Number(folder.affirmationCount ?? folder.recordingCount ?? folder.count);
-      const count = Number.isFinite(storedCount) && storedCount >= 0
-        ? storedCount
-        : folder.id === selectedFolderId
-          ? affirmations.length
-          : null;
+      const count = folderCount(folder);
       const subtitle = count === null
         ? "Open affirmation collection"
         : `${count} affirmation${count === 1 ? "" : "s"}`;
@@ -2337,6 +2360,13 @@ $$('[data-view], [data-view-link]').forEach((element) => element.addEventListene
   showView(view);
 }));
 $("#folder-list").addEventListener("click", async (event) => {
+  if (event.target.closest("[data-clear-folder-search]")) {
+    folderSearchQuery = "";
+    $("#folder-search").value = "";
+    renderFolders();
+    $("#folder-search").focus();
+    return;
+  }
   const menuTrigger = event.target.closest("[data-folder-menu-trigger]");
   if (menuTrigger) {
     event.preventDefault();
@@ -2371,6 +2401,28 @@ $("#folder-list").addEventListener("click", async (event) => {
   rememberFolder();
   renderFolders();
   await refreshAffirmations();
+});
+$("#folder-search").addEventListener("input", (event) => {
+  folderSearchQuery = event.target.value;
+  closeFolderCardMenus(false);
+  renderFolders();
+});
+$("#folder-search").addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !folderSearchQuery) return;
+  folderSearchQuery = "";
+  event.currentTarget.value = "";
+  renderFolders();
+});
+$("#folder-search-clear").addEventListener("click", () => {
+  folderSearchQuery = "";
+  $("#folder-search").value = "";
+  renderFolders();
+  $("#folder-search").focus();
+});
+$("#folder-sort").addEventListener("change", (event) => {
+  folderSortMode = event.target.value;
+  closeFolderCardMenus(false);
+  renderFolders();
 });
 $("#folder-list").addEventListener("keydown", (event) => {
   const menu = event.target.closest("[data-folder-menu]");
