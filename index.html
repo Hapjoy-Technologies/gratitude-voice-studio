@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Newsreader:opsz,wght@6..72,500;6..72,600&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=sentence-pause-1">
+  <link rel="stylesheet" href="./styles.css?v=collection-index-1">
 </head>
 <body>
   <div class="ambient-shape shape-one" aria-hidden="true"></div>
@@ -79,9 +79,31 @@
           <div class="collection-browser-heading">
             <div>
               <span class="section-kicker">Made for your mindful moments</span>
-              <h3>Your collections</h3>
+              <div class="collection-title-row">
+                <h3>Collections</h3>
+                <span class="collection-total" id="folder-total">0 folders</span>
+              </div>
             </div>
             <button class="secondary-button compact" id="new-folder" type="button"><span aria-hidden="true">＋</span> New folder</button>
+          </div>
+          <div class="collection-toolbar">
+            <div class="collection-search">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
+              <label class="sr-only" for="folder-search">Search collections</label>
+              <input id="folder-search" type="search" autocomplete="off" placeholder="Search your collections">
+              <button id="folder-search-clear" type="button" aria-label="Clear collection search" title="Clear search" hidden>×</button>
+            </div>
+            <div class="collection-toolbar-meta">
+              <span id="folder-result-count" role="status" aria-live="polite"></span>
+              <label class="collection-sort" for="folder-sort">
+                <span>Sort by</span>
+                <select id="folder-sort">
+                  <option value="default">Library order</option>
+                  <option value="name">Name A–Z</option>
+                  <option value="count">Most affirmations</option>
+                </select>
+              </label>
+            </div>
           </div>
           <div class="folder-list" id="folder-list"></div>
         </section>
@@ -514,6 +536,6 @@
     </form>
   </dialog>
 
-  <script src="./app.js?v=modal-pritesh-1"></script>
+  <script src="./app.js?v=collection-index-1"></script>
 </body>
 </html>
