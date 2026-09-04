@@ -19,6 +19,8 @@ Internal frontend for generating affirmation audio with the OmniVoice model host
   are stored separately in AWS dev storage
 - Checkbox-based multi-voice generation for a category, processed sequentially
   and saved one MP3 at a time directly to `affn-audios/dev/`
+- One-click section batches that apply selected voices across every category in
+  a section with three concurrent workers, automatic skipping, and retry support
 - Responsive internal-tool interface inspired by Gratitude's calm visual language
 
 The first recording creates the affirmation. **Add another voice** reuses that
