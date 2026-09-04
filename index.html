@@ -117,6 +117,7 @@
                     </div>
                   </div>
                   <button class="secondary-button compact music-button" id="background-music" type="button" disabled><span aria-hidden="true">♫</span> <span id="background-music-label">Music</span></button>
+                  <button class="primary-button compact" id="generate-staging-voice" type="button" hidden>Generate voice <span aria-hidden="true">→</span></button>
                   <div class="play-all-pause-picker" id="play-all-pause-picker">
                     <button class="secondary-button compact play-all-pause-trigger" id="play-all-pause-trigger" type="button" aria-haspopup="listbox" aria-controls="play-all-pause-menu" aria-expanded="false" disabled>
                       <span class="pause-trigger-icon" aria-hidden="true">Ⅱ</span>
@@ -420,7 +421,7 @@
       </div>
       <div class="voice-version-note">
         <span class="note-check" aria-hidden="true">✓</span>
-        <span><strong>The folder will not be copied.</strong>The same affirmation IDs and order stay unchanged. Only a new MP3 version is added to each affirmation.</span>
+        <span><strong>The folder will not be copied.</strong>The same affirmation IDs and order stay unchanged. Each generated MP3 is saved automatically to AWS dev storage.</span>
       </div>
       <section class="batch-panel" id="folder-voice-progress" hidden>
         <div class="batch-progress-copy">
@@ -433,7 +434,6 @@
       <p class="form-error" id="folder-voice-error" role="alert"></p>
       <div class="dialog-actions">
         <button class="secondary-button" id="cancel-folder-voice" data-close-dialog type="button">Cancel</button>
-        <button class="secondary-button" id="save-folder-voice" type="button" hidden>Save all to AWS</button>
         <button class="primary-button folder-voice-primary" id="generate-folder-voice" type="submit">Generate voice version <span aria-hidden="true">→</span></button>
       </div>
     </form>
@@ -514,6 +514,6 @@
     </form>
   </dialog>
 
-  <script src="./app.js?v=modal-pritesh-1"></script>
+  <script src="./app.js?v=v3-catalog-1"></script>
 </body>
 </html>

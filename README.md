@@ -13,15 +13,19 @@ Internal frontend for generating affirmation audio with the OmniVoice model host
 - MP3 generation, preview, download, and persistent ordering
 - Multiple voice versions for one ordered affirmation folder
 - Library sections plus AWS-backed folder editing, cover images, and deletion
+- Read-only loading of the 66 staging categories and their affirmation text from
+  `v3_dev.json`
+- One-click per-category generation that saves every completed MP3 directly to
+  `affn-audios/dev/`
 - Responsive internal-tool interface inspired by Gratitude's calm visual language
 
 The first recording creates the affirmation. **Add another voice** reuses that
 affirmation's identifier and stores only an additional MP3/voice metadata record.
 It does not duplicate the folder or its text.
 
-The isolated Lambda role can read and write only `affn-audios/dev/*`. It cannot
-modify the production `v2.json`. Reviewed app mappings must be added to
-`v2_dev.json` during the separate staging/promotion workflow.
+The isolated Lambda role can read and write only `affn-audios/dev/*`. It reads
+`v3_dev.json` as a catalog but cannot modify that file or the production
+`v2.json`. App-mapping promotion remains a separate workflow.
 
 ## Architecture
 

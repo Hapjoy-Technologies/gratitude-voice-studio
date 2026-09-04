@@ -2,6 +2,7 @@ const MODAL_BASE_URL = "https://pritesh--omnivoice-web-studio-web-app.modal.run"
 // Filled with the isolated GratitudeVoiceStudioApi Lambda Function URL at deploy time.
 const AWS_API_BASE_URL = "https://a6c42ttu3mqldnamijycyue27m0jgbae.lambda-url.us-east-1.on.aws";
 const AWS_CONFIGURED = !AWS_API_BASE_URL.startsWith("__");
+const STAGING_CATALOG_SOURCE = "v3_dev";
 const LOCAL_FOLDER_STORAGE_KEY = "gratitude-voice-studio-folders-v1";
 const FOLDER_VOICE_STORAGE_KEY = "gratitude-voice-studio-folder-voices-v1";
 const BACKGROUND_MUSIC_STORAGE_KEY = "gratitude-voice-studio-background-music-v1";
@@ -49,6 +50,7 @@ const voiceDisplayName = (name) => VOICE_DISPLAY_NAMES[String(name || "").trim()
 
 let accessCode = sessionStorage.getItem("gratitude-voice-access") || "";
 let folders = [];
+let stagingFolders = [];
 let selectedFolderId = localStorage.getItem("gratitude-voice-selected-folder") || null;
 let affirmations = [];
 let voices = [];
@@ -672,7 +674,7 @@ function rememberFolder() {
 async function showApp() {
   $("#login-screen").hidden = true;
   $("#app-shell").hidden = false;
-  $("#storage-mode").textContent = AWS_CONFIGURED ? "Shared AWS library" : "Browser draft";
+  $("#storage-mode").textContent = AWS_CONFIGURED ? "v3 staging · AWS dev audio" : "Browser draft";
   renderFolders();
   await Promise.all([loadVoices(), refreshFolders(), loadBackgroundMusic()]);
   restoreBackgroundMusicPreference();
@@ -680,6 +682,23 @@ async function showApp() {
   renderBackgroundMusicButton();
   renderPlayAllPausePicker();
   renderBackgroundMusicDialog();
+}
+
+function mergeStagingFolders(savedFolders, catalogFolders) {
+  const savedById = new Map(savedFolders.map((folder) => [folder.id, folder]));
+  const mergedStaging = catalogFolders.map((catalogFolder) => {
+    const saved = savedById.get(catalogFolder.id);
+    savedById.delete(catalogFolder.id);
+    return {
+      ...(saved || {}),
+      ...catalogFolder,
+      source: STAGING_CATALOG_SOURCE,
+      prepared: Boolean(saved),
+      coverKey: saved?.coverKey,
+      coverUrl: saved?.coverUrl || catalogFolder.coverUrl,
+    };
+  });
+  return [...mergedStaging, ...savedById.values()];
 }
 
 function showView(name) {
@@ -724,14 +743,26 @@ async function refreshFolders(preferredId = selectedFolderId) {
     return refreshAffirmations();
   }
   try {
-    const payload = await awsApi("/folders", {cache: "no-store"});
-    folders = payload.folders || [];
+    const savedPayload = await awsApi("/folders", {cache: "no-store"});
+    let catalogError = null;
+    try {
+      const catalogPayload = await awsApi("/staging-catalog", {cache: "no-store"});
+      stagingFolders = catalogPayload.folders || [];
+    } catch (error) {
+      stagingFolders = [];
+      catalogError = error;
+    }
+    folders = mergeStagingFolders(savedPayload.folders || [], stagingFolders);
     selectedFolderId = folders.some((folder) => folder.id === preferredId) ? preferredId : folders[0]?.id || null;
     restoreBackgroundMusicPreference();
     restorePlayAllPausePreference();
     rememberFolder();
+    if (!libraryDetailOpen) affirmations = [];
     renderFolders();
-    await refreshAffirmations();
+    if (libraryDetailOpen) await refreshAffirmations();
+    if (catalogError) {
+      $("#library-status").textContent = catalogError.message || "The v3 staging categories could not be loaded.";
+    }
   } catch (error) {
     folders = [];
     affirmations = [];
@@ -750,6 +781,14 @@ async function refreshAffirmations() {
   renderAffirmations(true);
   if (!selectedFolderId) return renderAffirmations();
   try {
+    const folder = folders.find((item) => item.id === selectedFolderId);
+    if (folder?.source === STAGING_CATALOG_SOURCE) {
+      const prepared = await awsApi(`/staging-catalog/folders/${encodeURIComponent(selectedFolderId)}/prepare`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      Object.assign(folder, prepared.folder || {}, {source: STAGING_CATALOG_SOURCE, prepared: true});
+    }
     const payload = await awsApi(`/folders/${encodeURIComponent(selectedFolderId)}/affirmations`, {cache: "no-store"});
     affirmations = payload.affirmations || [];
     ensureSelectedFolderVoice();
@@ -1109,13 +1148,10 @@ function renderFolders() {
           : null;
       const subtitle = count === null
         ? "Open affirmation collection"
-        : `${count} affirmation${count === 1 ? "" : "s"}`;
-      const menuOpen = openFolderMenuId === folder.id;
-      return `<article class="collection-card${menuOpen ? " menu-open" : ""}">
-        <button class="collection-card-open" data-folder="${escapeHtml(folder.id)}" type="button" aria-label="Open ${escapeHtml(folder.name)}">
-          <span class="collection-card-art${folder.coverUrl ? " has-cover-image" : ""}" style="${folderCoverStyle(folder)}">${folderCoverContent(folder)}</span>
-          <span class="collection-card-copy"><strong>${escapeHtml(folder.name)}</strong><small>${escapeHtml(subtitle)}</small></span>
-        </button>
+        : `${count} affirmation${count === 1 ? "" : "s"}${folder.source === STAGING_CATALOG_SOURCE ? " · v3 staging" : ""}`;
+      const managedByStaging = folder.source === STAGING_CATALOG_SOURCE;
+      const menuOpen = !managedByStaging && openFolderMenuId === folder.id;
+      const managementMenu = managedByStaging ? "" : `
         <button class="collection-card-menu-trigger" data-folder-menu-trigger="${escapeHtml(folder.id)}" type="button" aria-label="More options for ${escapeHtml(folder.name)}" aria-haspopup="menu" aria-expanded="${menuOpen}"${AWS_CONFIGURED ? "" : " disabled"}><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="12" cy="19" r="1.8"></circle></svg></button>
         <div class="collection-card-menu" data-folder-menu="${escapeHtml(folder.id)}" role="menu"${menuOpen ? "" : " hidden"}>
           <div class="collection-card-menu-label">
@@ -1126,7 +1162,13 @@ function renderFolders() {
           <button data-folder-action="image" data-folder-id="${escapeHtml(folder.id)}" type="button" role="menuitem"><span aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"></rect><circle cx="9" cy="10" r="2"></circle><path d="m4 17 4.5-4 3.5 3 3-2.5 5 4.5"></path></svg></span><span>${folder.coverKey ? "Change image" : "Upload image"}</span></button>
           <div class="collection-card-menu-divider" role="separator"></div>
           <button class="danger" data-folder-action="delete" data-folder-id="${escapeHtml(folder.id)}" type="button" role="menuitem"><span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16"></path><path d="M9 7V4h6v3"></path><path d="m7 7 1 13h8l1-13"></path><path d="M10 11v5M14 11v5"></path></svg></span><span>Delete folder</span></button>
-        </div>
+        </div>`;
+      return `<article class="collection-card${menuOpen ? " menu-open" : ""}">
+        <button class="collection-card-open" data-folder="${escapeHtml(folder.id)}" type="button" aria-label="Open ${escapeHtml(folder.name)}">
+          <span class="collection-card-art${folder.coverUrl ? " has-cover-image" : ""}" style="${folderCoverStyle(folder)}">${folderCoverContent(folder)}</span>
+          <span class="collection-card-copy"><strong>${escapeHtml(folder.name)}</strong><small>${escapeHtml(subtitle)}</small></span>
+        </button>
+        ${managementMenu}
       </article>`;
       }).join("");
       return `<section class="collection-section"><div class="collection-section-heading"><h4>${escapeHtml(section)}</h4><span>${sectionFolders.length} folder${sectionFolders.length === 1 ? "" : "s"}</span></div><div class="collection-grid">${cards}</div></section>`;
@@ -1277,17 +1319,22 @@ async function deleteSelectedFolderVoice(event) {
 
 function renderAffirmations(loading = false, error = "") {
   const folder = folders.find((item) => item.id === selectedFolderId);
+  const managedByStaging = folder?.source === STAGING_CATALOG_SOURCE;
   const voiceCount = folderVoiceAvailability().length;
   $("#folder-title").textContent = folder?.name || "Select a folder";
   $("#folder-summary").textContent = `${affirmations.length} affirmation${affirmations.length === 1 ? "" : "s"}${voiceCount ? ` · ${voiceCount} voice${voiceCount === 1 ? "" : "s"}` : ""}`;
-  $("#add-to-folder").disabled = !folder;
-  $("#folder-customize").disabled = !AWS_CONFIGURED || !folder;
+  $("#add-to-folder").hidden = managedByStaging;
+  $("#add-to-folder").disabled = !folder || managedByStaging;
+  $("#folder-customize").hidden = managedByStaging;
+  $("#folder-customize").disabled = !AWS_CONFIGURED || !folder || managedByStaging;
   $("#add-folder-voice").disabled = !AWS_CONFIGURED || !folder || !affirmations.length || !voices.length;
+  $("#generate-staging-voice").hidden = !managedByStaging;
+  $("#generate-staging-voice").disabled = !AWS_CONFIGURED || !folder || !affirmations.length || !voices.length || folderVoiceBusy;
   $("#play-all").disabled = !folder || !affirmations.length;
   $("#play-all").innerHTML = isPlayingAll
     ? '<span aria-hidden="true">■</span><span>Stop all</span>'
     : '<span aria-hidden="true">▶</span><span>Play all</span>';
-  $("#save-order").hidden = !orderChanged;
+  $("#save-order").hidden = managedByStaging || !orderChanged;
   $("#save-order").disabled = orderSaving;
   $("#save-order").textContent = orderSaving ? "Saving…" : "Save changes to AWS";
   renderBackgroundMusicButton();
@@ -1316,8 +1363,11 @@ function renderAffirmations(loading = false, error = "") {
       const voiceLabel = voiceImage
         ? `<span class="affirmation-voice"><img src="${escapeHtml(voiceImage)}" alt="">${escapeHtml(voiceName)}</span>`
         : `<span>${escapeHtml(voiceName)}</span>`;
-      const savedLabel = item.local ? "Browser preview" : "Saved in AWS";
-      return `<article class="affirmation-card${playing ? " playing" : ""}" data-affirmation-id="${escapeHtml(item.identifier)}"><span class="drag-handle" data-drag-id="${escapeHtml(item.identifier)}" draggable="true" aria-hidden="true" title="Drag to reorder">⋮⋮</span><div class="affirmation-main"><p>${escapeHtml(item.title)}</p><div class="affirmation-meta">${voiceLabel}<span>${escapeHtml(savedLabel)}</span></div></div><div class="affirmation-track-meta"><strong>${escapeHtml(voiceName)}</strong><span>${escapeHtml(savedLabel)} · ${new Date(createdAt).toLocaleDateString()}</span></div><div class="card-actions"><button data-move-id="${escapeHtml(item.identifier)}" data-direction="-1" type="button" aria-label="Move affirmation up" title="Move up"${index === 0 ? " disabled" : ""}>↑</button><button data-move-id="${escapeHtml(item.identifier)}" data-direction="1" type="button" aria-label="Move affirmation down" title="Move down"${index === affirmations.length - 1 ? " disabled" : ""}>↓</button><button data-play-id="${escapeHtml(item.identifier)}" type="button" aria-label="${playing ? "Stop" : "Play"} ${escapeHtml(item.title)}" title="${playing ? "Stop" : "Play"}"${playDisabled ? " disabled" : ""}>${playing ? "■" : "▶"}</button>${download}</div></article>`;
+      const savedLabel = item.local ? "Browser preview" : voice ? "Saved in AWS" : "Loaded from v3 staging";
+      const savedDate = createdAt ? new Date(createdAt).toLocaleDateString() : "";
+      const reorderControls = managedByStaging ? '<span aria-hidden="true"></span>' : `<span class="drag-handle" data-drag-id="${escapeHtml(item.identifier)}" draggable="true" aria-hidden="true" title="Drag to reorder">⋮⋮</span>`;
+      const moveControls = managedByStaging ? "" : `<button data-move-id="${escapeHtml(item.identifier)}" data-direction="-1" type="button" aria-label="Move affirmation up" title="Move up"${index === 0 ? " disabled" : ""}>↑</button><button data-move-id="${escapeHtml(item.identifier)}" data-direction="1" type="button" aria-label="Move affirmation down" title="Move down"${index === affirmations.length - 1 ? " disabled" : ""}>↓</button>`;
+      return `<article class="affirmation-card${playing ? " playing" : ""}" data-affirmation-id="${escapeHtml(item.identifier)}">${reorderControls}<div class="affirmation-main"><p>${escapeHtml(item.title)}</p><div class="affirmation-meta">${voiceLabel}<span>${escapeHtml(savedLabel)}</span></div></div><div class="affirmation-track-meta"><strong>${escapeHtml(voiceName)}</strong><span>${escapeHtml([savedLabel, savedDate].filter(Boolean).join(" · "))}</span></div><div class="card-actions">${moveControls}<button data-play-id="${escapeHtml(item.identifier)}" type="button" aria-label="${playing ? "Stop" : "Play"} ${escapeHtml(item.title)}" title="${playing ? "Stop" : "Play"}"${playDisabled ? " disabled" : ""}>${playing ? "■" : "▶"}</button>${download}</div></article>`;
     }).join("");
   }
 }
@@ -2066,7 +2116,6 @@ function clearFolderVoiceBatch() {
   folderVoiceBatch = null;
   $("#folder-voice-progress").hidden = true;
   $("#folder-voice-list").innerHTML = "";
-  $("#save-folder-voice").hidden = true;
   $("#folder-voice-error").textContent = "";
 }
 
@@ -2104,10 +2153,7 @@ function renderFolderVoiceBatch() {
   const activeItem = items.find((item) => item.status === "generating" || item.status === "saving");
   const activeIndex = activeItem ? items.indexOf(activeItem) + 1 : 0;
   const failures = items.filter((item) => item.status.endsWith("error")).length;
-  const ready = items.filter((item) => ["ready", "save-error"].includes(item.status)).length;
-  const completed = phase === "saving"
-    ? items.filter((item) => ["existing", "saved"].includes(item.status)).length
-    : items.filter((item) => ["existing", "ready", "saved", "save-error"].includes(item.status)).length;
+  const completed = items.filter((item) => ["existing", "saved"].includes(item.status)).length;
   const percent = items.length ? Math.round((completed / items.length) * 100) : 0;
   const remaining = Math.max(0, items.length - completed);
 
@@ -2118,9 +2164,7 @@ function renderFolderVoiceBatch() {
       ? `Generating recording ${activeIndex} of ${items.length}`
       : failures
         ? `${failures} recording${failures === 1 ? " needs" : "s need"} attention`
-        : ready
-          ? "Ready for your review"
-          : "Voice version complete";
+        : "Voice generated and saved to AWS";
   $("#folder-voice-progress-detail").textContent = generating || saving
     ? `${completed} completed · ${remaining} remaining · ${folderVoiceBatch.voice.name}`
     : `${completed} of ${items.length} recordings completed`;
@@ -2129,20 +2173,17 @@ function renderFolderVoiceBatch() {
   $("#folder-voice-progress-track").setAttribute("aria-valuenow", String(percent));
   $("#folder-voice-progress-track").classList.toggle("active", generating || saving);
   $("#folder-voice-list").innerHTML = items.map((item, index) => {
-    const canPreview = item.status === "ready" || item.status === "save-error";
+    const canPreview = ["ready", "save-error", "saved"].includes(item.status);
     const error = item.error ? `<small>${escapeHtml(item.error)}</small>` : "";
     const status = folderVoiceStatusLabel(item);
     return `<div class="batch-row batch-${escapeHtml(item.status)}"><span class="batch-index">${index + 1}</span><span class="batch-copy"><strong>${escapeHtml(item.title)}</strong><span class="batch-status" data-default-status="${escapeHtml(status)}">${status}</span>${error}</span>${canPreview ? `<button class="batch-play" data-batch-play="${escapeHtml(item.affirmationId)}" data-default-label="Play ${escapeHtml(item.title)}" type="button" aria-label="Play ${escapeHtml(item.title)}" aria-pressed="false">▶</button>` : ""}</div>`;
   }).join("");
 
   const generateButton = $("#generate-folder-voice");
-  const generationFailures = items.filter((item) => item.status === "generation-error").length;
-  generateButton.hidden = !generationFailures && items.every((item) => item.status !== "pending");
-  generateButton.textContent = generationFailures ? `Retry ${generationFailures} failed recording${generationFailures === 1 ? "" : "s"}` : "Generate voice version";
+  const retryable = items.filter((item) => ["generation-error", "save-error"].includes(item.status)).length;
+  generateButton.hidden = !retryable && items.every((item) => item.status !== "pending");
+  generateButton.textContent = retryable ? `Retry ${retryable} failed recording${retryable === 1 ? "" : "s"}` : "Generate and save voice";
   generateButton.disabled = folderVoiceBusy;
-  $("#save-folder-voice").hidden = !ready || generationFailures > 0;
-  $("#save-folder-voice").disabled = folderVoiceBusy;
-  $("#save-folder-voice").textContent = items.some((item) => item.status === "save-error") ? "Retry saving to AWS" : `Save ${ready} recording${ready === 1 ? "" : "s"} to AWS`;
   $("#folder-new-voice").disabled = folderVoiceBusy || Boolean(folderVoiceBatch);
   $("#cancel-folder-voice").disabled = folderVoiceBusy;
   $("#preview-folder-voice").disabled = folderVoiceBusy || Boolean(folderVoiceBatch);
@@ -2154,7 +2195,7 @@ function openFolderVoiceDialog() {
   clearFolderVoiceBatch();
   const availability = new Map(folderVoiceAvailability().map((voice) => [voice.id, voice.count]));
   const candidates = voices.filter((voice) => (availability.get(voice.id) || 0) < affirmations.length);
-  $("#folder-voice-description").textContent = `Generate all ${affirmations.length} “${folder.name}” affirmations with another voice while keeping this folder and its order.`;
+  $("#folder-voice-description").textContent = `Generate all ${affirmations.length} “${folder.name}” affirmations with another voice. Each MP3 is saved to AWS automatically before the next recording starts.`;
   $("#folder-new-voice").innerHTML = candidates.map((voice) => {
     const count = availability.get(voice.id) || 0;
     const suffix = count ? ` · resume ${count}/${affirmations.length}` : "";
@@ -2163,7 +2204,7 @@ function openFolderVoiceDialog() {
   $("#folder-voice-error").textContent = candidates.length ? "" : "Every available voice is already complete for this folder.";
   $("#generate-folder-voice").hidden = !candidates.length;
   $("#generate-folder-voice").disabled = !candidates.length;
-  $("#generate-folder-voice").textContent = `Generate ${affirmations.length} recordings`;
+  $("#generate-folder-voice").textContent = `Generate and save ${affirmations.length} recordings`;
   $("#folder-new-voice").disabled = !candidates.length;
   updateSelectedFolderVoiceSummary();
   $("#folder-voice-dialog").showModal();
@@ -2201,38 +2242,19 @@ async function generateFolderVoiceVersion(event) {
   folderVoiceBatch.phase = "generating";
   $("#folder-voice-error").textContent = "";
   renderFolderVoiceBatch();
-  const targets = folderVoiceBatch.items.filter((item) => ["pending", "generation-error"].includes(item.status));
+  const targets = folderVoiceBatch.items.filter((item) => ["pending", "generation-error", "save-error"].includes(item.status));
   for (const item of targets) {
-    item.status = "generating";
     item.error = "";
-    renderFolderVoiceBatch();
     try {
-      item.blob = await generateVoiceBlob(item.title, voice.id);
-      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-      item.previewUrl = URL.createObjectURL(item.blob);
-      item.status = "ready";
-    } catch (error) {
-      item.status = "generation-error";
-      item.error = error.message || "Modal could not generate this recording.";
-    }
-    renderFolderVoiceBatch();
-  }
-  folderVoiceBusy = false;
-  folderVoiceBatch.phase = folderVoiceBatch.items.some((item) => item.status === "generation-error") ? "blocked" : "review";
-  renderFolderVoiceBatch();
-}
-
-async function saveFolderVoiceVersion() {
-  if (!folderVoiceBatch || folderVoiceBusy) return;
-  folderVoiceBusy = true;
-  folderVoiceBatch.phase = "saving";
-  $("#folder-voice-error").textContent = "";
-  const targets = folderVoiceBatch.items.filter((item) => ["ready", "save-error"].includes(item.status));
-  for (const item of targets) {
-    item.status = "saving";
-    item.error = "";
-    renderFolderVoiceBatch();
-    try {
+      if (item.status !== "save-error" || !item.blob) {
+        item.status = "generating";
+        renderFolderVoiceBatch();
+        item.blob = await generateVoiceBlob(item.title, voice.id);
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+        item.previewUrl = URL.createObjectURL(item.blob);
+      }
+      item.status = "saving";
+      renderFolderVoiceBatch();
       const upload = await awsApi("/voice-uploads/presign", {
         method: "POST",
         body: JSON.stringify({
@@ -2259,16 +2281,16 @@ async function saveFolderVoiceVersion() {
       });
       item.status = "saved";
     } catch (error) {
-      item.status = "save-error";
-      item.error = error.message || "AWS could not save this recording.";
+      item.status = item.blob ? "save-error" : "generation-error";
+      item.error = error.message || (item.blob ? "AWS could not save this recording." : "Modal could not generate this recording.");
     }
     renderFolderVoiceBatch();
   }
   folderVoiceBusy = false;
-  const failed = folderVoiceBatch.items.filter((item) => item.status === "save-error").length;
+  const failed = folderVoiceBatch.items.filter((item) => item.status.endsWith("error")).length;
   if (failed) {
-    folderVoiceBatch.phase = "saving";
-    $("#folder-voice-error").textContent = `${failed} recording${failed === 1 ? " was" : "s were"} not saved. Your previews are still here; retry when ready.`;
+    folderVoiceBatch.phase = "blocked";
+    $("#folder-voice-error").textContent = `${failed} recording${failed === 1 ? " needs" : "s need"} attention. Retry to continue without regenerating successfully saved audio.`;
     return renderFolderVoiceBatch();
   }
 
@@ -2435,6 +2457,7 @@ $("#music-list").addEventListener("click", (event) => {
 $("#music-upload-form").addEventListener("submit", uploadBackgroundMusic);
 $("#save-order").addEventListener("click", saveAffirmationOrder);
 $("#add-folder-voice").addEventListener("click", () => { closeFolderVoiceMenu(); openFolderVoiceDialog(); });
+$("#generate-staging-voice").addEventListener("click", openFolderVoiceDialog);
 $("#folder-voice-trigger").addEventListener("click", (event) => { event.stopPropagation(); toggleFolderVoiceMenu(); });
 $("#folder-voice-options").addEventListener("click", (event) => {
   const remove = event.target.closest("[data-folder-voice-remove]");
@@ -2492,7 +2515,6 @@ $("#generate-form").addEventListener("submit", generate);
 $("#confirm-save").addEventListener("click", confirmSave);
 $("#folder-voice-form").addEventListener("submit", generateFolderVoiceVersion);
 $("#delete-folder-voice-form").addEventListener("submit", deleteSelectedFolderVoice);
-$("#save-folder-voice").addEventListener("click", saveFolderVoiceVersion);
 $("#folder-new-voice").addEventListener("change", () => { stopActivePreview(); updateSelectedFolderVoiceSummary(); });
 $("#preview-folder-voice").addEventListener("click", (event) => { const voiceId = $("#folder-new-voice").value; if (voiceId) previewVoice(voiceId, event.currentTarget); });
 $("#folder-voice-list").addEventListener("click", (event) => { const button = event.target.closest("[data-batch-play]"); if (button) playBatchPreview(button.dataset.batchPlay, button); });
