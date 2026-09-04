@@ -83,6 +83,8 @@ let selectedFolderVoiceId = null;
 let folderVoiceBatch = null;
 let folderVoiceBusy = false;
 let folderVoiceDeleteBusy = false;
+let folderVoiceDeleteId = null;
+let folderVoiceDeleteReplacementId = null;
 let batchAudio = null;
 let batchAudioUrl = null;
 let activeBatchButton = null;
@@ -1230,13 +1232,14 @@ function renderFolderVoicePicker() {
     : escapeHtml(selected.name.slice(0, 1).toUpperCase());
   name.textContent = selected.name;
   trigger.setAttribute("aria-label", `Voice: ${selected.name}`);
+  const managedVoiceCount = complete.filter((voice) => !voice.readOnly).length;
   options.innerHTML = complete.map((voice) => {
     const isSelected = voice.id === selected.id;
-    const removeDisabled = voice.readOnly || !AWS_CONFIGURED || complete.length < 2 || folderVoiceDeleteBusy;
+    const removeDisabled = voice.readOnly || !AWS_CONFIGURED || managedVoiceCount < 2 || folderVoiceDeleteBusy;
     const removeTitle = voice.readOnly
       ? "Existing v3 audio is read-only"
-      : complete.length < 2
-        ? "Add another complete voice before removing this one"
+      : managedVoiceCount < 2
+        ? "Add another complete AWS voice before removing this one"
         : `Remove ${voice.name} from this folder`;
     const image = voice.imageUrl || voiceImageUrl(voice.id);
     const portrait = image
@@ -1273,38 +1276,37 @@ function selectFolderVoice(voiceId) {
   renderAffirmations();
 }
 
-function openDeleteFolderVoiceDialog() {
+function openDeleteFolderVoiceDialog(voiceId) {
   const folder = folders.find((item) => item.id === selectedFolderId);
   const complete = completeFolderVoices();
-  const selected = complete.find((voice) => voice.id === selectedFolderVoiceId);
-  const remaining = complete.filter((voice) => voice.id !== selectedFolderVoiceId);
-  if (selected?.readOnly) {
+  const target = complete.find((voice) => voice.id === voiceId);
+  const remaining = complete.filter((voice) => voice.id !== voiceId && !voice.readOnly);
+  if (target?.readOnly) {
     $("#library-status").textContent = "Existing v3 audio is read-only and cannot be removed here.";
     return;
   }
-  if (!folder || !selected || !remaining.length) {
-    $("#library-status").textContent = "Add another complete voice before removing this one.";
+  if (!folder || !target || !remaining.length) {
+    $("#library-status").textContent = "Add another complete AWS voice before removing this one.";
     return;
   }
-  $("#delete-folder-voice-description").textContent = `Remove “${selected.name}” and its ${affirmations.length} recording${affirmations.length === 1 ? "" : "s"} from “${folder.name}”?`;
-  $("#replacement-folder-voice").innerHTML = remaining.map((voice) => `<option value="${escapeHtml(voice.id)}">${escapeHtml(voice.name)}</option>`).join("");
+  const replacement = remaining.find((voice) => voice.id === selectedFolderVoiceId) || remaining[0];
+  folderVoiceDeleteId = target.id;
+  folderVoiceDeleteReplacementId = replacement.id;
+  $("#delete-folder-voice-title").textContent = `Delete ${target.name}?`;
+  $("#delete-folder-voice-description").textContent = `This will delete all ${affirmations.length} “${target.name}” recordings from “${folder.name}”.`;
   $("#delete-folder-voice-error").textContent = "";
   $("#confirm-delete-folder-voice").disabled = false;
-  $("#confirm-delete-folder-voice").textContent = "Remove from this folder";
+  $("#confirm-delete-folder-voice").textContent = "Yes, delete voice";
   $("#delete-folder-voice-dialog").showModal();
 }
 
 async function deleteSelectedFolderVoice(event) {
   event.preventDefault();
-  if (folderVoiceDeleteBusy || !selectedFolderId || !selectedFolderVoiceId) return;
+  if (folderVoiceDeleteBusy || !selectedFolderId || !folderVoiceDeleteId || !folderVoiceDeleteReplacementId) return;
   const folderId = selectedFolderId;
-  const voiceId = selectedFolderVoiceId;
-  const replacementVoiceId = $("#replacement-folder-voice").value;
+  const voiceId = folderVoiceDeleteId;
+  const replacementVoiceId = folderVoiceDeleteReplacementId;
   const selected = completeFolderVoices().find((voice) => voice.id === voiceId);
-  if (!replacementVoiceId || replacementVoiceId === voiceId) {
-    $("#delete-folder-voice-error").textContent = "Choose a different voice to keep active.";
-    return;
-  }
 
   folderVoiceDeleteBusy = true;
   const button = $("#confirm-delete-folder-voice");
@@ -1323,12 +1325,14 @@ async function deleteSelectedFolderVoice(event) {
     $("#delete-folder-voice-dialog").close();
     await refreshFolders(folderId);
     $("#library-status").textContent = `${selected?.name || "Voice"} was removed from this folder in AWS (${result.deletedRecordings} recordings).`;
+    folderVoiceDeleteId = null;
+    folderVoiceDeleteReplacementId = null;
   } catch (error) {
     $("#delete-folder-voice-error").textContent = error.message || "Could not remove this voice.";
   } finally {
     folderVoiceDeleteBusy = false;
     button.disabled = false;
-    button.textContent = "Remove from this folder";
+    button.textContent = "Yes, delete voice";
     renderFolderVoicePicker();
   }
 }
@@ -2508,8 +2512,8 @@ $("#folder-voice-trigger").addEventListener("click", (event) => { event.stopProp
 $("#folder-voice-options").addEventListener("click", (event) => {
   const remove = event.target.closest("[data-folder-voice-remove]");
   if (remove) {
-    selectFolderVoice(remove.dataset.folderVoiceRemove);
-    openDeleteFolderVoiceDialog();
+    closeFolderVoiceMenu();
+    openDeleteFolderVoiceDialog(remove.dataset.folderVoiceRemove);
     return;
   }
   const option = event.target.closest("[data-folder-voice-option]");
@@ -2588,7 +2592,11 @@ $$('[data-close-dialog]').forEach((button) => button.addEventListener("click", (
     if (folderVoiceBusy) return;
     clearFolderVoiceBatch();
   }
-  if (dialog.id === "delete-folder-voice-dialog" && folderVoiceDeleteBusy) return;
+  if (dialog.id === "delete-folder-voice-dialog") {
+    if (folderVoiceDeleteBusy) return;
+    folderVoiceDeleteId = null;
+    folderVoiceDeleteReplacementId = null;
+  }
   if (dialog.id === "delete-folder-dialog" && folderDeleteBusy) return;
   if (dialog.id === "music-dialog") {
     if (musicUploadBusy || musicDeleteBusyId) return;
@@ -2612,7 +2620,9 @@ $("#folder-voice-dialog").addEventListener("cancel", (event) => {
   clearFolderVoiceBatch();
 });
 $("#delete-folder-voice-dialog").addEventListener("cancel", (event) => {
-  if (folderVoiceDeleteBusy) event.preventDefault();
+  if (folderVoiceDeleteBusy) return event.preventDefault();
+  folderVoiceDeleteId = null;
+  folderVoiceDeleteReplacementId = null;
 });
 $("#delete-folder-dialog").addEventListener("cancel", (event) => {
   if (folderDeleteBusy) return event.preventDefault();
